@@ -20,19 +20,16 @@ export default function TabLayout() {
       <Tabs.Screen
         name="index"
         options={{
-          title: "Mood",
+          title: "Trends",
           tabBarIcon: ({ color }) => (
-            <IconSymbol size={28} name="face.smiling.fill" color={color} />
+            <IconSymbol size={28} name="chart.bar.fill" color={color} />
           ),
         }}
       />
       <Tabs.Screen
         name="chart"
         options={{
-          title: "Trends",
-          tabBarIcon: ({ color }) => (
-            <IconSymbol size={28} name="chart.bar.fill" color={color} />
-          ),
+          href: null,
         }}
       />
       <Tabs.Screen
