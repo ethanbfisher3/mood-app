@@ -213,58 +213,28 @@ export default function TrendsScreen() {
               horizontal
               showsHorizontalScrollIndicator={true}
               contentContainerStyle={styles.chartScrollContent}
-              style={{ flex: 1 }}
+              style={styles.scrollViewStyle}
             >
-              {/* Bars */}
-              <View style={{ ...styles.barsContainer, width: "100%" }} id="hi">
-                {/* {chartData.map((point, index) => {
-                  const barHeight = point.value
-                    ? (point.value / 5) * maxBarHeight
-                    : 0
-                  const color = point.value
-                    ? getMoodByValue(point.value).color
-                    : textColor + "20"
+              {/* Parent View */}
+              <View style={styles.scrollViewStyle}>
+                {/* Top Bar */}
+                <View style={{ ...styles.barsContainer, width: "100%" }}>
+                  {chartData.map((point, index) => (
+                    <ThemedText key={index}>{point.value}</ThemedText>
+                  ))}
+                </View>
 
-                  return (
-                    <View
-                      key={point.date}
-                      style={[
-                        styles.barWrapper,
-                        { width: barWidth, marginHorizontal: gap / 2 },
-                      ]}
-                    >
-                      <View
-                        style={[styles.barBackground, { height: maxBarHeight }]}
-                      >
-                        <View
-                          style={[
-                            styles.bar,
-                            {
-                              height: barHeight || 4,
-                              backgroundColor: point.value
-                                ? color
-                                : textColor + "20",
-                            },
-                          ]}
-                        />
-                      </View>
-                      {xLabels.length && xLabels[index] && (
-                        <ThemedText
-                          style={[styles.xAxisLabel]}
-                          numberOfLines={1}
-                          key={index}
-                        >
-                          {xLabels[index]}
-                        </ThemedText>
-                      )}
-                    </View>
-                  )
-                })} */}
-                {xLabels.map((label, index) => (
-                  <ThemedText key={index} style={styles.xAxisLabel}>
-                    {label}
-                  </ThemedText>
-                ))}
+                {/* Bottom Bar */}
+                <View
+                  style={{ ...styles.barsContainer, width: "100%" }}
+                  id="hi"
+                >
+                  {xLabels.map((label, index) => (
+                    <ThemedText key={index} style={styles.xAxisLabel}>
+                      {label}
+                    </ThemedText>
+                  ))}
+                </View>
               </View>
             </ScrollView>
           </View>
@@ -588,6 +558,11 @@ const styles = StyleSheet.create({
     opacity: 0.5,
     textAlign: "center",
     marginBottom: 8,
+  },
+  scrollViewStyle: {
+    flex: 1,
+    display: "flex",
+    flexDirection: "column",
   },
   chartGestureArea: {
     flex: 1,
