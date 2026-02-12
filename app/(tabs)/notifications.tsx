@@ -272,10 +272,6 @@ export default function NotificationsScreen() {
                 content: createMoodReminderContent(),
                 trigger: null, // Send immediately
               })
-              Alert.alert(
-                "Test Notification Sent",
-                "Expand the notification to see mood options! On iOS, swipe down on the notification. On Android, pull down to expand.",
-              )
             }}
           >
             <ThemedText style={styles.permissionButtonText}>

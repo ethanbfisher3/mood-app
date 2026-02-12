@@ -1,6 +1,8 @@
-import React, { useCallback, useEffect, useMemo, useState } from "react"
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import {
   Alert,
+  AppState,
+  AppStateStatus,
   Dimensions,
   Modal,
   ScrollView,
@@ -10,6 +12,7 @@ import {
   View,
 } from "react-native"
 import { useSharedValue } from "react-native-reanimated"
+import Svg, { Circle, Line, Rect } from "react-native-svg"
 
 import { ThemedText } from "@/components/themed-text"
 import { ThemedView } from "@/components/themed-view"
@@ -38,11 +41,34 @@ export default function TrendsScreen() {
   const [note, setNote] = useState("")
   const [isSaving, setIsSaving] = useState(false)
   const [zoomLevel, setZoomLevel] = useState(1)
+  const [selectedBarIndex, setSelectedBarIndex] = useState<number | null>(null)
   const baseZoom = useSharedValue(1)
   const pinchScale = useSharedValue(1)
 
   const backgroundColor = useThemeColor({}, "background")
   const textColor = useThemeColor({}, "text")
+
+  const appState = useRef(AppState.currentState)
+
+  // Reload data when app comes to foreground (e.g., after notification action)
+  useEffect(() => {
+    const subscription = AppState.addEventListener(
+      "change",
+      (nextAppState: AppStateStatus) => {
+        if (
+          appState.current.match(/inactive|background/) &&
+          nextAppState === "active"
+        ) {
+          reload()
+        }
+        appState.current = nextAppState
+      },
+    )
+
+    return () => {
+      subscription.remove()
+    }
+  }, [reload])
 
   // Load data on mount
   useEffect(() => {
@@ -135,26 +161,82 @@ export default function TrendsScreen() {
 
   // Generate chart data points
   const chartData = useMemo(() => {
-    const days = rangeConfig[timeRange].days
     const data: { date: string; value: number | null; entry?: MoodEntry }[] = []
 
-    for (let i = days - 1; i >= 0; i--) {
-      const date = new Date()
-      date.setDate(date.getDate() - i)
-      const dateStr = date.toISOString().split("T")[0]
-      const entry = filteredEntries.find((e) => e.date === dateStr)
+    if (timeRange === "year") {
+      // For year view, group by month and find the starting month
+      
+      // Find the earliest entry in the past year
+      const oneYearAgo = new Date()
+      oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1)
+      const yearEntries = entries.filter(e => new Date(e.date) >= oneYearAgo)
+      
+      let startMonth: number
+      let startYear: number
+      
+      if (yearEntries.length > 0) {
+        // Sort to find earliest entry
+        const sortedEntries = [...yearEntries].sort((a, b) => 
+          new Date(a.date).getTime() - new Date(b.date).getTime()
+        )
+        const firstEntry = new Date(sortedEntries[0].date)
+        startMonth = firstEntry.getMonth()
+        startYear = firstEntry.getFullYear()
+      } else {
+        // Default to current month if no entries
+        const now = new Date()
+        startMonth = now.getMonth()
+        startYear = now.getFullYear()
+      }
+      
+      // Generate 12 months of data starting from startMonth
+      for (let i = 0; i < 12; i++) {
+        const monthIndex = (startMonth + i) % 12
+        const year = startYear + Math.floor((startMonth + i) / 12)
+        
+        // Find entries for this month
+        const monthEntries = entries.filter(e => {
+          const entryDate = new Date(e.date)
+          return entryDate.getMonth() === monthIndex && entryDate.getFullYear() === year
+        })
+        
+        // Calculate average mood for the month
+        let avgValue: number | null = null
+        if (monthEntries.length > 0) {
+          const values = monthEntries.map(e => 
+            MOOD_OPTIONS.find(m => m.type === e.mood)?.value ?? 3
+          )
+          avgValue = values.reduce((a, b) => a + b, 0) / values.length
+        }
+        
+        data.push({
+          date: `${year}-${String(monthIndex + 1).padStart(2, "0")}`,
+          value: avgValue,
+          entry: monthEntries[0], // Just for reference
+        })
+      }
+    } else {
+      // Week and month views - daily data
+      const days = rangeConfig[timeRange].days
+      
+      for (let i = days - 1; i >= 0; i--) {
+        const date = new Date()
+        date.setDate(date.getDate() - i)
+        const dateStr = date.toISOString().split("T")[0]
+        const entry = filteredEntries.find((e) => e.date === dateStr)
 
-      data.push({
-        date: dateStr,
-        value: entry
-          ? (MOOD_OPTIONS.find((m) => m.type === entry.mood)?.value ?? null)
-          : null,
-        entry,
-      })
+        data.push({
+          date: dateStr,
+          value: entry
+            ? (MOOD_OPTIONS.find((m) => m.type === entry.mood)?.value ?? null)
+            : null,
+          entry,
+        })
+      }
     }
 
     return data
-  }, [timeRange, filteredEntries])
+  }, [timeRange, filteredEntries, entries])
 
   const todaysMood = getTodaysMood()
   const todayFormatted = new Date().toLocaleDateString("en-US", {
@@ -164,15 +246,19 @@ export default function TrendsScreen() {
   })
 
   const renderSimpleChart = () => {
-    const maxBarHeight = 150
+    const chartPadding = 6 // Padding to prevent point cutoff
+    const chartHeight = 150
+    const maxBarHeight = chartHeight - chartPadding * 2
     const baseBarWidth =
-      timeRange === "week" ? 35 : timeRange === "month" ? 8 : 3
-    const baseGap = timeRange === "week" ? 8 : timeRange === "month" ? 3 : 1
+      timeRange === "week" ? 35 : timeRange === "month" ? 8 : 30
+    const baseGap = timeRange === "week" ? 8 : timeRange === "month" ? 3 : 10
     // Only apply zoom for year view
     const effectiveZoom = timeRange === "year" ? zoomLevel : 1
     const barWidth = baseBarWidth * effectiveZoom
     const gap = baseGap * effectiveZoom
 
+    const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+    
     let xLabels: string[] = []
     if (timeRange === "week") {
       xLabels = ["S", "M", "T", "W", "T", "F", "S"]
@@ -187,7 +273,11 @@ export default function TrendsScreen() {
         xLabels = ["1", "6", "12", "17", "23", "28"]
       }
     } else if (timeRange === "year") {
-      xLabels = ["J", "F", "M", "A", "M", "J", "J", "A", "S", "O", "N", "D"]
+      // Generate labels based on the chartData month order
+      xLabels = chartData.map(d => {
+        const monthIndex = parseInt(d.date.split("-")[1]) - 1
+        return monthNames[monthIndex]
+      })
     }
 
     return (
@@ -203,26 +293,154 @@ export default function TrendsScreen() {
               ))}
             </View>
 
-            {/* Scrollable bars */}
+            {/* Scrollable chart */}
             <ScrollView
               horizontal
-              showsHorizontalScrollIndicator={true}
+              showsHorizontalScrollIndicator={false}
               contentContainerStyle={styles.chartScrollContent}
-              style={styles.scrollViewStyle}
+              style={{ flex: 1 }}
             >
-              {/* Parent View */}
-              <View style={styles.scrollViewStyle}>
-                {/* Top Bar */}
-                <View style={{ ...styles.barsContainer, width: "100%" }}>
-                  {chartData.map((point, index) => (
-                    <ThemedText key={index}>{point.value}</ThemedText>
-                  ))}
+              <View>
+                {/* Chart */}
+                <View
+                  style={{
+                    height: chartHeight,
+                    width: chartData.length * (barWidth + gap),
+                    position: "relative",
+                  }}
+                >
+                  <Svg
+                    width={chartData.length * (barWidth + gap)}
+                    height={chartHeight}
+                  >
+                    {timeRange === "year" ? (
+                      /* Bar chart for year view */
+                      chartData.map((point, index) => {
+                        if (point.value === null) return null
+                        const barHeight = ((point.value - 1) / 4) * maxBarHeight
+                        const x = index * (barWidth + gap)
+                        const y = chartPadding + maxBarHeight - barHeight
+                        return (
+                          <Rect
+                            key={`bar-${index}`}
+                            x={x}
+                            y={y}
+                            width={barWidth}
+                            height={barHeight}
+                            fill={selectedBarIndex === index ? "#388E3C" : "#4CAF50"}
+                            rx={4}
+                            ry={4}
+                          />
+                        )
+                      })
+                    ) : (
+                      <>
+                        {/* Draw lines connecting points */}
+                        {chartData.map((point, index) => {
+                          if (point.value === null) return null
+                          // Find previous non-null point
+                          let prevIndex = -1
+                          for (let i = index - 1; i >= 0; i--) {
+                            if (chartData[i].value !== null) {
+                              prevIndex = i
+                              break
+                            }
+                          }
+                          if (prevIndex === -1) return null
+
+                          const prevPoint = chartData[prevIndex]
+                          const x1 = prevIndex * (barWidth + gap) + barWidth / 2
+                          const y1 =
+                            chartPadding +
+                            maxBarHeight -
+                            ((prevPoint.value! - 1) / 4) * maxBarHeight
+                          const x2 = index * (barWidth + gap) + barWidth / 2
+                          const y2 =
+                            chartPadding +
+                            maxBarHeight -
+                            ((point.value - 1) / 4) * maxBarHeight
+
+                          return (
+                            <Line
+                              key={`line-${index}`}
+                              x1={x1}
+                              y1={y1}
+                              x2={x2}
+                              y2={y2}
+                              stroke="#4CAF50"
+                              strokeWidth={2}
+                            />
+                          )
+                        })}
+                        {/* Draw points */}
+                        {chartData.map((point, index) => {
+                          if (point.value === null) return null
+                          const x = index * (barWidth + gap) + barWidth / 2
+                          const y =
+                            chartPadding +
+                            maxBarHeight -
+                            ((point.value - 1) / 4) * maxBarHeight
+                          return (
+                            <Circle
+                              key={`point-${index}`}
+                              cx={x}
+                              cy={y}
+                              r={4}
+                              fill="#4CAF50"
+                            />
+                          )
+                        })}
+                      </>
+                    )}
+                  </Svg>
+                  
+                  {/* Touchable overlays for bar chart */}
+                  {timeRange === "year" && chartData.map((point, index) => {
+                    if (point.value === null) return null
+                    const x = index * (barWidth + gap)
+                    return (
+                      <TouchableOpacity
+                        key={`touch-${index}`}
+                        style={{
+                          position: "absolute",
+                          left: x,
+                          top: 0,
+                          width: barWidth,
+                          height: chartHeight,
+                        }}
+                        onPress={() => setSelectedBarIndex(selectedBarIndex === index ? null : index)}
+                        activeOpacity={0.7}
+                      />
+                    )
+                  })}
+                  
+                  {/* Tooltip for selected bar */}
+                  {timeRange === "year" && selectedBarIndex !== null && chartData[selectedBarIndex]?.value !== null && (
+                    <View
+                      style={[
+                        styles.barTooltip,
+                        {
+                          left: selectedBarIndex * (barWidth + gap) + barWidth / 2 - 40,
+                          top: chartPadding + maxBarHeight - ((chartData[selectedBarIndex].value! - 1) / 4) * maxBarHeight - 50,
+                        },
+                      ]}
+                    >
+                      <ThemedText style={styles.barTooltipEmoji}>
+                        {getMoodByValue(Math.round(chartData[selectedBarIndex].value!))?.emoji ?? "😐"}
+                      </ThemedText>
+                      <ThemedText style={styles.barTooltipText}>
+                        {chartData[selectedBarIndex].value!.toFixed(1)}
+                      </ThemedText>
+                    </View>
+                  )}
                 </View>
 
-                {/* Bottom Bar */}
+                {/* X-axis labels */}
                 <View
-                  style={{ ...styles.barsContainer, width: "100%" }}
-                  id="hi"
+                  style={{
+                    ...styles.xAxisContainer,
+                    width: chartData.length * (barWidth + gap),
+                  }}
                 >
                   {xLabels.map((label, index) => (
                     <ThemedText key={index} style={styles.xAxisLabel}>
@@ -275,7 +493,9 @@ export default function TrendsScreen() {
                 activeOpacity={0.7}
               >
                 <ThemedText style={styles.moodEmoji}>{mood.emoji}</ThemedText>
-                <ThemedText style={styles.moodLabel}>{mood.label}</ThemedText>
+                <ThemedText style={styles.moodLabel} numberOfLines={1}>
+                  {mood.label}
+                </ThemedText>
               </TouchableOpacity>
             ))}
           </View>
@@ -293,6 +513,8 @@ export default function TrendsScreen() {
             multiline
             numberOfLines={3}
             textAlignVertical="top"
+            blurOnSubmit={true}
+            returnKeyType="done"
           />
 
           <TouchableOpacity
@@ -333,7 +555,10 @@ export default function TrendsScreen() {
                 styles.rangeButton,
                 timeRange === range && styles.rangeButtonActive,
               ]}
-              onPress={() => setTimeRange(range)}
+              onPress={() => {
+                setTimeRange(range)
+                setSelectedBarIndex(null)
+              }}
             >
               <ThemedText
                 style={[
@@ -549,11 +774,6 @@ const styles = StyleSheet.create({
     textAlign: "center",
     marginBottom: 8,
   },
-  scrollViewStyle: {
-    flex: 1,
-    display: "flex",
-    flexDirection: "column",
-  },
   chartGestureArea: {
     flex: 1,
   },
@@ -563,13 +783,11 @@ const styles = StyleSheet.create({
   chartScrollContent: {
     paddingRight: 16,
     alignItems: "flex-end",
-    flexGrow: 1,
   },
   yAxis: {
     marginRight: 8,
     justifyContent: "space-between",
     height: 150,
-    marginBottom: 20,
   },
   yAxisLabel: {
     fontSize: 16,
@@ -593,6 +811,28 @@ const styles = StyleSheet.create({
   bar: {
     width: "100%",
     borderRadius: 4,
+  },
+  barTooltip: {
+    position: "absolute",
+    backgroundColor: "rgba(0, 0, 0, 0.85)",
+    borderRadius: 8,
+    padding: 8,
+    alignItems: "center",
+    minWidth: 80,
+    zIndex: 100,
+  },
+  barTooltipEmoji: {
+    fontSize: 24,
+    marginBottom: 2,
+  },
+  barTooltipText: {
+    color: "#fff",
+    fontSize: 14,
+    fontWeight: "600",
+  },
+  xAxisContainer: {
+    flexDirection: "row",
+    justifyContent: "space-between",
   },
   xAxisLabel: {
     marginTop: 4,
@@ -685,20 +925,18 @@ const styles = StyleSheet.create({
   },
   moodContainer: {
     flexDirection: "row",
-    flexWrap: "wrap",
     justifyContent: "center",
-    gap: 10,
+    gap: 8,
     marginBottom: 20,
   },
   moodButton: {
     alignItems: "center",
     justifyContent: "center",
-    padding: 12,
+    padding: 8,
     borderRadius: 12,
     borderWidth: 2,
     borderColor: "transparent",
-    width: "18%",
-    minWidth: 60,
+    flex: 1,
     overflow: "visible",
   },
   moodEmoji: {
@@ -708,8 +946,9 @@ const styles = StyleSheet.create({
     textAlign: "center",
   },
   moodLabel: {
-    fontSize: 11,
+    fontSize: 10,
     fontWeight: "600",
+    textAlign: "center",
   },
   noteLabel: {
     marginBottom: 8,

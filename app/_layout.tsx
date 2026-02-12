@@ -10,6 +10,7 @@ import {
 import * as Notifications from "expo-notifications"
 import { Stack } from "expo-router"
 import { StatusBar } from "expo-status-bar"
+import * as SystemUI from "expo-system-ui"
 import { useEffect } from "react"
 import "react-native-reanimated"
 
@@ -32,6 +33,11 @@ export const unstable_settings = {
 
 export default function RootLayout() {
   const colorScheme = useColorScheme()
+
+  // Set the root background color to match the app background
+  useEffect(() => {
+    SystemUI.setBackgroundColorAsync(colorScheme === "dark" ? "#000" : "#fff")
+  }, [colorScheme])
 
   // Set up notification categories and response listeners
   useEffect(() => {
