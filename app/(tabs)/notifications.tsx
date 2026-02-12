@@ -1,6 +1,6 @@
 import DateTimePicker from "@react-native-community/datetimepicker"
-import { useFocusEffect } from "expo-router"
-import React, { useCallback, useState } from "react"
+import * as Notifications from "expo-notifications"
+import React, { useEffect, useState } from "react"
 import {
   Alert,
   Platform,
@@ -10,12 +10,15 @@ import {
   TouchableOpacity,
   View,
 } from "react-native"
-import { SafeAreaView } from "react-native-safe-area-context"
 
 import { ThemedText } from "@/components/themed-text"
 import { ThemedView } from "@/components/themed-view"
 import { useNotificationSettings } from "@/hooks/use-notification-settings"
 import { useThemeColor } from "@/hooks/use-theme-color"
+import {
+  createMoodReminderContent,
+  setupNotificationCategories,
+} from "@/services/notification-service"
 
 export default function NotificationsScreen() {
   const {
@@ -34,12 +37,10 @@ export default function NotificationsScreen() {
   const backgroundColor = useThemeColor({}, "background")
   const textColor = useThemeColor({}, "text")
 
-  // Refresh data when screen comes into focus
-  useFocusEffect(
-    useCallback(() => {
-      reload()
-    }, [reload]),
-  )
+  // Reload settings when component mounts
+  useEffect(() => {
+    reload()
+  }, [reload])
 
   const handleToggle = async (value: boolean) => {
     if (value && !hasPermission) {
@@ -81,16 +82,16 @@ export default function NotificationsScreen() {
 
   if (loading) {
     return (
-      <SafeAreaView style={[styles.container, { backgroundColor }]}>
+      <View style={[styles.container, { backgroundColor }]}>
         <ThemedView style={styles.loadingContainer}>
           <ThemedText>Loading...</ThemedText>
         </ThemedView>
-      </SafeAreaView>
+      </View>
     )
   }
 
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor }]}>
+    <View style={[styles.container, { backgroundColor }]}>
       <ScrollView contentContainerStyle={styles.scrollContent}>
         <ThemedView style={styles.header}>
           <ThemedText type="title">Notifications</ThemedText>
@@ -114,8 +115,8 @@ export default function NotificationsScreen() {
               value={settings.enabled}
               onValueChange={handleToggle}
               disabled={isSaving}
-              trackColor={{ false: "#767577", true: "#81b0ff" }}
-              thumbColor={settings.enabled ? "#4CAF50" : "#f4f3f4"}
+              trackColor={{ false: "#767577", true: "#4CAF50" }}
+              thumbColor="#fff"
             />
           </View>
         </ThemedView>
@@ -129,7 +130,9 @@ export default function NotificationsScreen() {
         >
           <TouchableOpacity
             style={styles.settingRow}
-            onPress={() => settings.enabled && setShowTimePicker(true)}
+            onPress={() =>
+              settings.enabled && setShowTimePicker(!showTimePicker)
+            }
             disabled={!settings.enabled || isSaving}
             activeOpacity={0.7}
           >
@@ -186,9 +189,17 @@ export default function NotificationsScreen() {
           </View>
 
           <View style={styles.infoItem}>
+            <ThemedText style={styles.infoEmoji}>⬇️</ThemedText>
+            <ThemedText style={styles.infoText}>
+              Expand the notification to quickly log your mood without opening
+              the app
+            </ThemedText>
+          </View>
+
+          <View style={styles.infoItem}>
             <ThemedText style={styles.infoEmoji}>📝</ThemedText>
             <ThemedText style={styles.infoText}>
-              Tap the notification to open the app and log your mood
+              Or tap the notification to open the app and add notes
             </ThemedText>
           </View>
 
@@ -242,6 +253,31 @@ export default function NotificationsScreen() {
               </ThemedText>
             </TouchableOpacity>
           )}
+
+          <TouchableOpacity
+            style={[styles.permissionButton, styles.testButton]}
+            onPress={async () => {
+              if (!hasPermission) {
+                const granted = await requestPermissions()
+                if (!granted) {
+                  Alert.alert(
+                    "Permission Required",
+                    "Please grant notification permissions to test.",
+                  )
+                  return
+                }
+              }
+              await setupNotificationCategories()
+              await Notifications.scheduleNotificationAsync({
+                content: createMoodReminderContent(),
+                trigger: null, // Send immediately
+              })
+            }}
+          >
+            <ThemedText style={styles.permissionButtonText}>
+              🧪 Test Expandable Notification
+            </ThemedText>
+          </TouchableOpacity>
         </ThemedView>
 
         {/* Tips */}
@@ -253,6 +289,10 @@ export default function NotificationsScreen() {
             • Choose a time when you're usually winding down, like evening
           </ThemedText>
           <ThemedText style={styles.tipText}>
+            • Swipe down on iOS or pull down on Android to expand the
+            notification and see mood options
+          </ThemedText>
+          <ThemedText style={styles.tipText}>
             • Reflecting on your day helps with emotional awareness
           </ThemedText>
           <ThemedText style={styles.tipText}>
@@ -260,7 +300,7 @@ export default function NotificationsScreen() {
           </ThemedText>
         </ThemedView>
       </ScrollView>
-    </SafeAreaView>
+    </View>
   )
 }
 
@@ -370,6 +410,9 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     alignItems: "center",
     marginTop: 12,
+  },
+  testButton: {
+    backgroundColor: "#2196F3",
   },
   permissionButtonText: {
     color: "white",

@@ -2,9 +2,8 @@ import { HapticTab } from "@/components/haptic-tab"
 import { IconSymbol } from "@/components/ui/icon-symbol"
 import { Colors } from "@/constants/theme"
 import { useColorScheme } from "@/hooks/use-color-scheme"
-import React, { useCallback, useRef, useState } from "react"
+import React, { useCallback, useState } from "react"
 import { StyleSheet, Text, View } from "react-native"
-import PagerView from "react-native-pager-view"
 import { SafeAreaView } from "react-native-safe-area-context"
 
 import TrendsScreen from "./index"
@@ -17,18 +16,10 @@ const TABS = [
 
 export default function TabLayout() {
   const colorScheme = useColorScheme()
-  const pagerRef = useRef<PagerView>(null)
   const [currentPage, setCurrentPage] = useState(0)
 
-  const handlePageSelected = useCallback(
-    (e: { nativeEvent: { position: number } }) => {
-      setCurrentPage(e.nativeEvent.position)
-    },
-    [],
-  )
-
   const handleTabPress = useCallback((index: number) => {
-    pagerRef.current?.setPage(index)
+    setCurrentPage(index)
   }, [])
 
   const tintColor = Colors[colorScheme ?? "light"].tint
@@ -41,20 +32,9 @@ export default function TabLayout() {
       style={[styles.container, { backgroundColor }]}
       edges={["top"]}
     >
-      <PagerView
-        ref={pagerRef}
-        style={styles.pager}
-        initialPage={0}
-        onPageSelected={handlePageSelected}
-        overdrag={true}
-      >
-        <View key="0" style={styles.page}>
-          <TrendsScreen />
-        </View>
-        <View key="1" style={styles.page}>
-          <NotificationsScreen />
-        </View>
-      </PagerView>
+      <View style={styles.pager}>
+        {currentPage === 0 ? <TrendsScreen /> : <NotificationsScreen />}
+      </View>
 
       {/* Custom Tab Bar */}
       <View style={[styles.tabBar, { backgroundColor: tabBarBackground }]}>
@@ -83,9 +63,6 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   pager: {
-    flex: 1,
-  },
-  page: {
     flex: 1,
   },
   tabBar: {
