@@ -1,4 +1,8 @@
 import {
+  handleNotificationResponse,
+  setupNotificationCategories,
+} from "@/services/notification-service"
+import {
   DarkTheme,
   DefaultTheme,
   ThemeProvider,
@@ -6,6 +10,7 @@ import {
 import * as Notifications from "expo-notifications"
 import { Stack } from "expo-router"
 import { StatusBar } from "expo-status-bar"
+import { useEffect } from "react"
 import "react-native-reanimated"
 
 import { useColorScheme } from "@/hooks/use-color-scheme"
@@ -27,6 +32,29 @@ export const unstable_settings = {
 
 export default function RootLayout() {
   const colorScheme = useColorScheme()
+
+  // Set up notification categories and response listeners
+  useEffect(() => {
+    // Initialize notification categories for expandable mood actions
+    setupNotificationCategories()
+
+    // Listen for notification responses (when user interacts with notification actions)
+    const responseSubscription =
+      Notifications.addNotificationResponseReceivedListener((response) => {
+        handleNotificationResponse(response)
+      })
+
+    // Check if app was opened from a notification action
+    Notifications.getLastNotificationResponseAsync().then((response) => {
+      if (response) {
+        handleNotificationResponse(response)
+      }
+    })
+
+    return () => {
+      responseSubscription.remove()
+    }
+  }, [])
 
   return (
     <ThemeProvider value={colorScheme === "dark" ? DarkTheme : DefaultTheme}>

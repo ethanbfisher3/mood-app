@@ -1,5 +1,4 @@
-import { useFocusEffect } from "expo-router"
-import React, { useCallback, useMemo, useState } from "react"
+import React, { useCallback, useEffect, useMemo, useState } from "react"
 import {
   Alert,
   Dimensions,
@@ -10,9 +9,7 @@ import {
   TouchableOpacity,
   View,
 } from "react-native"
-import { GestureHandlerRootView } from "react-native-gesture-handler"
 import { useSharedValue } from "react-native-reanimated"
-import { SafeAreaView } from "react-native-safe-area-context"
 
 import { ThemedText } from "@/components/themed-text"
 import { ThemedView } from "@/components/themed-view"
@@ -47,12 +44,10 @@ export default function TrendsScreen() {
   const backgroundColor = useThemeColor({}, "background")
   const textColor = useThemeColor({}, "text")
 
-  // Refresh data when screen comes into focus
-  useFocusEffect(
-    useCallback(() => {
-      reload()
-    }, [reload]),
-  )
+  // Load data on mount
+  useEffect(() => {
+    reload()
+  }, [reload])
 
   // Load today's mood when modal opens
   const openMoodModal = useCallback(() => {
@@ -323,195 +318,190 @@ export default function TrendsScreen() {
   )
 
   return (
-    <GestureHandlerRootView style={{ flex: 1 }}>
-      <SafeAreaView style={[styles.container, { backgroundColor }]}>
-        <ScrollView contentContainerStyle={styles.scrollContent}>
-          <ThemedView style={styles.header}>
-            <ThemedText type="title">Mood Trends</ThemedText>
-          </ThemedView>
+    <View style={[styles.container, { backgroundColor }]}>
+      <ScrollView contentContainerStyle={styles.scrollContent}>
+        <ThemedView style={styles.header}>
+          <ThemedText type="title">Mood Trends</ThemedText>
+        </ThemedView>
 
-          {/* Time Range Buttons */}
-          <ThemedView style={styles.rangeButtonsContainer}>
-            {(["week", "month", "year"] as TimeRange[]).map((range) => (
-              <TouchableOpacity
-                key={range}
+        {/* Time Range Buttons */}
+        <ThemedView style={styles.rangeButtonsContainer}>
+          {(["week", "month", "year"] as TimeRange[]).map((range) => (
+            <TouchableOpacity
+              key={range}
+              style={[
+                styles.rangeButton,
+                timeRange === range && styles.rangeButtonActive,
+              ]}
+              onPress={() => setTimeRange(range)}
+            >
+              <ThemedText
                 style={[
-                  styles.rangeButton,
-                  timeRange === range && styles.rangeButtonActive,
+                  styles.rangeButtonText,
+                  timeRange === range && styles.rangeButtonTextActive,
                 ]}
-                onPress={() => setTimeRange(range)}
               >
-                <ThemedText
-                  style={[
-                    styles.rangeButtonText,
-                    timeRange === range && styles.rangeButtonTextActive,
-                  ]}
-                >
-                  {rangeConfig[range].label}
-                </ThemedText>
-              </TouchableOpacity>
-            ))}
-          </ThemedView>
+                {rangeConfig[range].label}
+              </ThemedText>
+            </TouchableOpacity>
+          ))}
+        </ThemedView>
 
-          {/* Chart */}
-          {renderSimpleChart()}
+        {/* Chart */}
+        {renderSimpleChart()}
 
-          {/* Today's Mood Button */}
-          <TouchableOpacity
-            style={[
-              styles.todayMoodButton,
-              todaysMood && {
-                borderColor: getMoodOption(todaysMood.mood).color,
-                backgroundColor: getMoodOption(todaysMood.mood).color + "15",
-              },
-            ]}
-            onPress={openMoodModal}
-            activeOpacity={0.7}
-          >
-            {todaysMood ? (
-              <View style={styles.todayMoodContent}>
-                <ThemedText style={styles.todayMoodEmoji}>
-                  {getMoodOption(todaysMood.mood).emoji}
+        {/* Today's Mood Button */}
+        <TouchableOpacity
+          style={[
+            styles.todayMoodButton,
+            todaysMood && {
+              borderColor: getMoodOption(todaysMood.mood).color,
+              backgroundColor: getMoodOption(todaysMood.mood).color + "15",
+            },
+          ]}
+          onPress={openMoodModal}
+          activeOpacity={0.7}
+        >
+          {todaysMood ? (
+            <View style={styles.todayMoodContent}>
+              <ThemedText style={styles.todayMoodEmoji}>
+                {getMoodOption(todaysMood.mood).emoji}
+              </ThemedText>
+              <View style={styles.todayMoodTextContainer}>
+                <ThemedText style={styles.todayMoodLabel}>
+                  Today's Mood
                 </ThemedText>
-                <View style={styles.todayMoodTextContainer}>
-                  <ThemedText style={styles.todayMoodLabel}>
-                    Today's Mood
-                  </ThemedText>
-                  <ThemedText style={styles.todayMoodValue}>
-                    {getMoodOption(todaysMood.mood).label}
-                  </ThemedText>
-                </View>
-                <ThemedText style={styles.todayMoodEdit}>Edit</ThemedText>
+                <ThemedText style={styles.todayMoodValue}>
+                  {getMoodOption(todaysMood.mood).label}
+                </ThemedText>
               </View>
-            ) : (
-              <View style={styles.todayMoodContent}>
-                <ThemedText style={styles.todayMoodEmoji}>➕</ThemedText>
-                <View style={styles.todayMoodTextContainer}>
-                  <ThemedText style={styles.todayMoodLabel}>
-                    Log Today's Mood
-                  </ThemedText>
-                  <ThemedText style={styles.todayMoodSubtext}>
-                    Tap to record how you're feeling
-                  </ThemedText>
-                </View>
-              </View>
-            )}
-          </TouchableOpacity>
-
-          {/* Stats */}
-          <ThemedView style={styles.statsContainer}>
-            <ThemedText type="subtitle" style={styles.statsTitle}>
-              Statistics
-            </ThemedText>
-
-            <View style={styles.statsGrid}>
-              <ThemedView style={styles.statCard}>
-                <ThemedText style={styles.statEmoji}>
-                  {stats.avgMood > 0
-                    ? getMoodByValue(Math.round(stats.avgMood)).emoji
-                    : "—"}
-                </ThemedText>
-                <ThemedText style={styles.statLabel}>Average Mood</ThemedText>
-                <ThemedText style={styles.statValue}>
-                  {stats.avgMood > 0
-                    ? stats.avgMood.toFixed(1) + "/5"
-                    : "No data"}
-                </ThemedText>
-              </ThemedView>
-
-              <ThemedView style={styles.statCard}>
-                <ThemedText style={styles.statEmoji}>
-                  {stats.mostCommon
-                    ? getMoodOption(stats.mostCommon as any).emoji
-                    : "—"}
-                </ThemedText>
-                <ThemedText style={styles.statLabel}>Most Common</ThemedText>
-                <ThemedText style={styles.statValue}>
-                  {stats.mostCommon
-                    ? getMoodOption(stats.mostCommon as any).label
-                    : "No data"}
-                </ThemedText>
-              </ThemedView>
-
-              <ThemedView style={styles.statCard}>
-                <ThemedText style={styles.statEmoji}>🔥</ThemedText>
-                <ThemedText style={styles.statLabel}>Current Streak</ThemedText>
-                <ThemedText style={styles.statValue}>
-                  {stats.streak} {stats.streak === 1 ? "day" : "days"}
-                </ThemedText>
-              </ThemedView>
-
-              <ThemedView style={styles.statCard}>
-                <ThemedText style={styles.statEmoji}>📊</ThemedText>
-                <ThemedText style={styles.statLabel}>Entries</ThemedText>
-                <ThemedText style={styles.statValue}>
-                  {filteredEntries.length} / {rangeConfig[timeRange].days}
-                </ThemedText>
-              </ThemedView>
+              <ThemedText style={styles.todayMoodEdit}>Edit</ThemedText>
             </View>
-          </ThemedView>
+          ) : (
+            <View style={styles.todayMoodContent}>
+              <ThemedText style={styles.todayMoodEmoji}>➕</ThemedText>
+              <View style={styles.todayMoodTextContainer}>
+                <ThemedText style={styles.todayMoodLabel}>
+                  Log Today's Mood
+                </ThemedText>
+                <ThemedText style={styles.todayMoodSubtext}>
+                  Tap to record how you're feeling
+                </ThemedText>
+              </View>
+            </View>
+          )}
+        </TouchableOpacity>
 
-          {/* Recent Entries */}
-          {filteredEntries.length > 0 && (
-            <ThemedView style={styles.recentContainer}>
-              <ThemedText type="subtitle" style={styles.recentTitle}>
-                Recent Entries
+        {/* Stats */}
+        <ThemedView style={styles.statsContainer}>
+          <ThemedText type="subtitle" style={styles.statsTitle}>
+            Statistics
+          </ThemedText>
+
+          <View style={styles.statsGrid}>
+            <ThemedView style={styles.statCard}>
+              <ThemedText style={styles.statEmoji}>
+                {stats.avgMood > 0
+                  ? getMoodByValue(Math.round(stats.avgMood)).emoji
+                  : "—"}
               </ThemedText>
-              {[...filteredEntries]
-                .sort(
-                  (a, b) =>
-                    new Date(b.date).getTime() - new Date(a.date).getTime(),
-                )
-                .slice(0, 5)
-                .map((entry) => {
-                  const mood = getMoodOption(entry.mood)
-                  return (
-                    <ThemedView key={entry.id} style={styles.entryCard}>
-                      <ThemedText style={styles.entryEmoji}>
-                        {mood.emoji}
+              <ThemedText style={styles.statLabel}>Average Mood</ThemedText>
+              <ThemedText style={styles.statValue}>
+                {stats.avgMood > 0
+                  ? stats.avgMood.toFixed(1) + "/5"
+                  : "No data"}
+              </ThemedText>
+            </ThemedView>
+
+            <ThemedView style={styles.statCard}>
+              <ThemedText style={styles.statEmoji}>
+                {stats.mostCommon
+                  ? getMoodOption(stats.mostCommon as any).emoji
+                  : "—"}
+              </ThemedText>
+              <ThemedText style={styles.statLabel}>Most Common</ThemedText>
+              <ThemedText style={styles.statValue}>
+                {stats.mostCommon
+                  ? getMoodOption(stats.mostCommon as any).label
+                  : "No data"}
+              </ThemedText>
+            </ThemedView>
+
+            <ThemedView style={styles.statCard}>
+              <ThemedText style={styles.statEmoji}>🔥</ThemedText>
+              <ThemedText style={styles.statLabel}>Current Streak</ThemedText>
+              <ThemedText style={styles.statValue}>
+                {stats.streak} {stats.streak === 1 ? "day" : "days"}
+              </ThemedText>
+            </ThemedView>
+
+            <ThemedView style={styles.statCard}>
+              <ThemedText style={styles.statEmoji}>📊</ThemedText>
+              <ThemedText style={styles.statLabel}>Entries</ThemedText>
+              <ThemedText style={styles.statValue}>
+                {filteredEntries.length} / {rangeConfig[timeRange].days}
+              </ThemedText>
+            </ThemedView>
+          </View>
+        </ThemedView>
+
+        {/* Recent Entries */}
+        {filteredEntries.length > 0 && (
+          <ThemedView style={styles.recentContainer}>
+            <ThemedText type="subtitle" style={styles.recentTitle}>
+              Recent Entries
+            </ThemedText>
+            {[...filteredEntries]
+              .sort(
+                (a, b) =>
+                  new Date(b.date).getTime() - new Date(a.date).getTime(),
+              )
+              .slice(0, 5)
+              .map((entry) => {
+                const mood = getMoodOption(entry.mood)
+                return (
+                  <ThemedView key={entry.id} style={styles.entryCard}>
+                    <ThemedText style={styles.entryEmoji}>
+                      {mood.emoji}
+                    </ThemedText>
+                    <View style={styles.entryInfo}>
+                      <ThemedText style={styles.entryMood}>
+                        {mood.label}
                       </ThemedText>
-                      <View style={styles.entryInfo}>
-                        <ThemedText style={styles.entryMood}>
-                          {mood.label}
+                      <ThemedText style={styles.entryDate}>
+                        {new Date(entry.date).toLocaleDateString("en-US", {
+                          weekday: "short",
+                          month: "short",
+                          day: "numeric",
+                        })}
+                      </ThemedText>
+                      {entry.note && (
+                        <ThemedText style={styles.entryNote} numberOfLines={2}>
+                          {entry.note}
                         </ThemedText>
-                        <ThemedText style={styles.entryDate}>
-                          {new Date(entry.date).toLocaleDateString("en-US", {
-                            weekday: "short",
-                            month: "short",
-                            day: "numeric",
-                          })}
-                        </ThemedText>
-                        {entry.note && (
-                          <ThemedText
-                            style={styles.entryNote}
-                            numberOfLines={2}
-                          >
-                            {entry.note}
-                          </ThemedText>
-                        )}
-                      </View>
-                    </ThemedView>
-                  )
-                })}
-            </ThemedView>
-          )}
+                      )}
+                    </View>
+                  </ThemedView>
+                )
+              })}
+          </ThemedView>
+        )}
 
-          {filteredEntries.length === 0 && (
-            <ThemedView style={styles.emptyState}>
-              <ThemedText style={styles.emptyEmoji}>📝</ThemedText>
-              <ThemedText style={styles.emptyText}>
-                No mood entries yet for this period.
-              </ThemedText>
-              <ThemedText style={styles.emptySubtext}>
-                Start tracking your mood to see trends!
-              </ThemedText>
-            </ThemedView>
-          )}
-        </ScrollView>
+        {filteredEntries.length === 0 && (
+          <ThemedView style={styles.emptyState}>
+            <ThemedText style={styles.emptyEmoji}>📝</ThemedText>
+            <ThemedText style={styles.emptyText}>
+              No mood entries yet for this period.
+            </ThemedText>
+            <ThemedText style={styles.emptySubtext}>
+              Start tracking your mood to see trends!
+            </ThemedText>
+          </ThemedView>
+        )}
+      </ScrollView>
 
-        {renderMoodModal()}
-      </SafeAreaView>
-    </GestureHandlerRootView>
+      {renderMoodModal()}
+    </View>
   )
 }
 

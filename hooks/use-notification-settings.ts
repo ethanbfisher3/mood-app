@@ -1,3 +1,7 @@
+import {
+  createMoodReminderContent,
+  setupNotificationCategories,
+} from "@/services/notification-service"
 import AsyncStorage from "@react-native-async-storage/async-storage"
 import * as Notifications from "expo-notifications"
 import { useCallback, useEffect, useState } from "react"
@@ -53,21 +57,22 @@ export function useNotificationSettings() {
   useEffect(() => {
     loadSettings()
     checkPermissions()
+    // Set up notification categories for expandable mood actions
+    setupNotificationCategories()
   }, [loadSettings, checkPermissions])
 
-  // Schedule daily notification
+  // Schedule daily notification with mood action buttons
   const scheduleNotification = useCallback(
     async (hour: number, minute: number) => {
       // Cancel existing notifications first
       await Notifications.cancelAllScheduledNotificationsAsync()
 
-      // Schedule new notification
+      // Ensure categories are set up
+      await setupNotificationCategories()
+
+      // Schedule new notification with mood category for expandable actions
       await Notifications.scheduleNotificationAsync({
-        content: {
-          title: "How are you feeling today? 🌟",
-          body: "Take a moment to log your mood and track your emotional well-being.",
-          sound: true,
-        },
+        content: createMoodReminderContent(),
         trigger: {
           type: Notifications.SchedulableTriggerInputTypes.DAILY,
           hour,
