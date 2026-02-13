@@ -159,7 +159,11 @@ export default function TrendsScreen() {
         now.getMonth(),
         1,
       )
-      const startDate = new Date(endDate.getFullYear(), endDate.getMonth() - 11, 1)
+      const startDate = new Date(
+        endDate.getFullYear(),
+        endDate.getMonth() - 11,
+        1,
+      )
       const start = startDate.toISOString().split("T")[0]
       const end = new Date(endDate.getFullYear(), endDate.getMonth() + 1, 0)
         .toISOString()
@@ -266,7 +270,11 @@ export default function TrendsScreen() {
     } else if (timeRange === "month") {
       // Month view - show target month from 1st to last day (with offset)
       const now = new Date()
-      const targetDate = new Date(now.getFullYear(), now.getMonth() + chartOffset, 1)
+      const targetDate = new Date(
+        now.getFullYear(),
+        now.getMonth() + chartOffset,
+        1,
+      )
       const year = targetDate.getFullYear()
       const month = targetDate.getMonth()
       const daysInMonth = new Date(year, month + 1, 0).getDate()
@@ -312,7 +320,11 @@ export default function TrendsScreen() {
   // Calculate date range for display and navigation
   const { dateRangeText, hasEntriesBefore, hasEntriesAfter } = useMemo(() => {
     if (chartData.length === 0) {
-      return { dateRangeText: "", hasEntriesBefore: false, hasEntriesAfter: false }
+      return {
+        dateRangeText: "",
+        hasEntriesBefore: false,
+        hasEntriesAfter: false,
+      }
     }
 
     const startDate = chartData[0].date
@@ -325,7 +337,10 @@ export default function TrendsScreen() {
       rangeText = `${start.toLocaleDateString("en-US", { month: "short", day: "numeric" })} - ${end.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}`
     } else if (timeRange === "month") {
       const date = new Date(startDate + "T00:00:00")
-      rangeText = date.toLocaleDateString("en-US", { month: "long", year: "numeric" })
+      rangeText = date.toLocaleDateString("en-US", {
+        month: "long",
+        year: "numeric",
+      })
     } else {
       const start = new Date(startDate + "-01T00:00:00")
       const end = new Date(endDate + "-01T00:00:00")
@@ -343,7 +358,11 @@ export default function TrendsScreen() {
     // Don't allow navigating forward past current period
     const hasAfter = chartOffset < 0
 
-    return { dateRangeText: rangeText, hasEntriesBefore: hasBefore, hasEntriesAfter: hasAfter }
+    return {
+      dateRangeText: rangeText,
+      hasEntriesBefore: hasBefore,
+      hasEntriesAfter: hasAfter,
+    }
   }, [chartData, entries, timeRange, chartOffset])
 
   const todaysMood = getTodaysMood()
@@ -419,16 +438,36 @@ export default function TrendsScreen() {
             <TouchableOpacity
               onPress={() => setChartOffset(chartOffset - 1)}
               disabled={!hasEntriesBefore}
-              style={[styles.navArrow, !hasEntriesBefore && styles.navArrowDisabled]}
+              style={[
+                styles.navArrow,
+                !hasEntriesBefore && styles.navArrowDisabled,
+              ]}
             >
-              <ThemedText style={[styles.navArrowText, !hasEntriesBefore && styles.navArrowTextDisabled]}>←</ThemedText>
+              <ThemedText
+                style={[
+                  styles.navArrowText,
+                  !hasEntriesBefore && styles.navArrowTextDisabled,
+                ]}
+              >
+                ←
+              </ThemedText>
             </TouchableOpacity>
             <TouchableOpacity
               onPress={() => setChartOffset(chartOffset + 1)}
               disabled={!hasEntriesAfter}
-              style={[styles.navArrow, !hasEntriesAfter && styles.navArrowDisabled]}
+              style={[
+                styles.navArrow,
+                !hasEntriesAfter && styles.navArrowDisabled,
+              ]}
             >
-              <ThemedText style={[styles.navArrowText, !hasEntriesAfter && styles.navArrowTextDisabled]}>→</ThemedText>
+              <ThemedText
+                style={[
+                  styles.navArrowText,
+                  !hasEntriesAfter && styles.navArrowTextDisabled,
+                ]}
+              >
+                →
+              </ThemedText>
             </TouchableOpacity>
           </View>
         </View>
