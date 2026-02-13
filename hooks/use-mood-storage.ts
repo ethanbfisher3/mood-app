@@ -56,6 +56,35 @@ export function useMoodStorage() {
     [entries],
   )
 
+  // Save a mood entry for a specific date (for testing)
+  const saveMoodForDate = useCallback(
+    async (mood: MoodType, date: string, note?: string) => {
+      const newEntry: MoodEntry = {
+        id: `${date}-${Date.now()}`,
+        mood,
+        date,
+        note,
+      }
+
+      // Remove existing entry for that date if exists
+      const filteredEntries = entries.filter((e) => e.date !== date)
+      const updatedEntries = [...filteredEntries, newEntry]
+
+      try {
+        await AsyncStorage.setItem(
+          MOOD_STORAGE_KEY,
+          JSON.stringify(updatedEntries),
+        )
+        setEntries(updatedEntries)
+        return true
+      } catch (error) {
+        console.error("Error saving mood:", error)
+        return false
+      }
+    },
+    [entries],
+  )
+
   // Get today's mood entry
   const getTodaysMood = useCallback(() => {
     const today = new Date().toISOString().split("T")[0]
@@ -87,6 +116,7 @@ export function useMoodStorage() {
     entries,
     loading,
     saveMood,
+    saveMoodForDate,
     getTodaysMood,
     getEntriesInRange,
     getEntriesForPastDays,

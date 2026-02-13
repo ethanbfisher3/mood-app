@@ -1,3 +1,4 @@
+import { useRouter } from "expo-router"
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import {
   Alert,
@@ -11,6 +12,7 @@ import {
   TouchableOpacity,
   View,
 } from "react-native"
+import { Calendar } from "react-native-calendars"
 import { useSharedValue } from "react-native-reanimated"
 import Svg, { Circle, Line, Rect } from "react-native-svg"
 
@@ -33,8 +35,15 @@ const CHART_PADDING = 40
 const CHART_WIDTH = SCREEN_WIDTH - CHART_PADDING * 2
 
 export default function TrendsScreen() {
-  const { entries, getEntriesForPastDays, reload, saveMood, getTodaysMood } =
-    useMoodStorage()
+  const router = useRouter()
+  const {
+    entries,
+    getEntriesForPastDays,
+    reload,
+    saveMood,
+    saveMoodForDate,
+    getTodaysMood,
+  } = useMoodStorage()
   const [timeRange, setTimeRange] = useState<TimeRange>("week")
   const [modalVisible, setModalVisible] = useState(false)
   const [selectedMood, setSelectedMood] = useState<MoodType | null>(null)
@@ -42,6 +51,10 @@ export default function TrendsScreen() {
   const [isSaving, setIsSaving] = useState(false)
   const [zoomLevel, setZoomLevel] = useState(1)
   const [selectedBarIndex, setSelectedBarIndex] = useState<number | null>(null)
+  const [chartOffset, setChartOffset] = useState(0) // 0 = current period, negative = past
+  const [devModalVisible, setDevModalVisible] = useState(false)
+  const [devSelectedMood, setDevSelectedMood] = useState<MoodType | null>(null)
+  const [devDate, setDevDate] = useState("")
   const baseZoom = useSharedValue(1)
   const pinchScale = useSharedValue(1)
 
@@ -113,8 +126,49 @@ export default function TrendsScreen() {
   }
 
   const filteredEntries = useMemo(() => {
-    return getEntriesForPastDays(rangeConfig[timeRange].days)
-  }, [timeRange, getEntriesForPastDays, entries])
+    if (timeRange === "month") {
+      // Filter entries for the target month (with offset)
+      const now = new Date()
+      const targetDate = new Date(
+        now.getFullYear(),
+        now.getMonth() + chartOffset,
+        1,
+      )
+      const year = targetDate.getFullYear()
+      const month = targetDate.getMonth()
+      return entries.filter((e) => {
+        const entryDate = new Date(e.date)
+        return (
+          entryDate.getFullYear() === year && entryDate.getMonth() === month
+        )
+      })
+    } else if (timeRange === "week") {
+      // Filter entries for the target week (with offset)
+      const endDate = new Date()
+      endDate.setDate(endDate.getDate() + chartOffset * 7)
+      const startDate = new Date(endDate)
+      startDate.setDate(startDate.getDate() - 6)
+      const start = startDate.toISOString().split("T")[0]
+      const end = endDate.toISOString().split("T")[0]
+      return entries.filter((e) => e.date >= start && e.date <= end)
+    } else if (timeRange === "year") {
+      // Filter entries for the target 12-month period (with offset)
+      const now = new Date()
+      const endDate = new Date(
+        now.getFullYear() + chartOffset,
+        now.getMonth(),
+        1,
+      )
+      const startDate = new Date(endDate.getFullYear(), endDate.getMonth() - 11, 1)
+      const start = startDate.toISOString().split("T")[0]
+      const end = new Date(endDate.getFullYear(), endDate.getMonth() + 1, 0)
+        .toISOString()
+        .split("T")[0]
+      return entries.filter((e) => e.date >= start && e.date <= end)
+    }
+    // Fallback (should not reach here)
+    return []
+  }, [timeRange, entries, chartOffset])
 
   // Calculate stats
   const stats = useMemo(() => {
@@ -164,64 +218,81 @@ export default function TrendsScreen() {
     const data: { date: string; value: number | null; entry?: MoodEntry }[] = []
 
     if (timeRange === "year") {
-      // For year view, group by month and find the starting month
-      
-      // Find the earliest entry in the past year
-      const oneYearAgo = new Date()
-      oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1)
-      const yearEntries = entries.filter(e => new Date(e.date) >= oneYearAgo)
-      
-      let startMonth: number
-      let startYear: number
-      
-      if (yearEntries.length > 0) {
-        // Sort to find earliest entry
-        const sortedEntries = [...yearEntries].sort((a, b) => 
-          new Date(a.date).getTime() - new Date(b.date).getTime()
-        )
-        const firstEntry = new Date(sortedEntries[0].date)
-        startMonth = firstEntry.getMonth()
-        startYear = firstEntry.getFullYear()
-      } else {
-        // Default to current month if no entries
-        const now = new Date()
-        startMonth = now.getMonth()
-        startYear = now.getFullYear()
-      }
-      
-      // Generate 12 months of data starting from startMonth
+      // For year view, show 12 months ending at the current month (with offset)
+      const now = new Date()
+      // Calculate the end month based on offset (each offset step = 12 months)
+      const endDate = new Date(
+        now.getFullYear() + chartOffset,
+        now.getMonth(),
+        1,
+      )
+      const endMonth = endDate.getMonth()
+      const endYear = endDate.getFullYear()
+
+      // Start 11 months before the end month
+      const startDate = new Date(endYear, endMonth - 11, 1)
+      const startMonth = startDate.getMonth()
+      const startYear = startDate.getFullYear()
+
+      // Generate 12 months of data
       for (let i = 0; i < 12; i++) {
         const monthIndex = (startMonth + i) % 12
         const year = startYear + Math.floor((startMonth + i) / 12)
-        
+
         // Find entries for this month
-        const monthEntries = entries.filter(e => {
+        const monthEntries = entries.filter((e) => {
           const entryDate = new Date(e.date)
-          return entryDate.getMonth() === monthIndex && entryDate.getFullYear() === year
+          return (
+            entryDate.getMonth() === monthIndex &&
+            entryDate.getFullYear() === year
+          )
         })
-        
+
         // Calculate average mood for the month
         let avgValue: number | null = null
         if (monthEntries.length > 0) {
-          const values = monthEntries.map(e => 
-            MOOD_OPTIONS.find(m => m.type === e.mood)?.value ?? 3
+          const values = monthEntries.map(
+            (e) => MOOD_OPTIONS.find((m) => m.type === e.mood)?.value ?? 3,
           )
           avgValue = values.reduce((a, b) => a + b, 0) / values.length
         }
-        
+
         data.push({
           date: `${year}-${String(monthIndex + 1).padStart(2, "0")}`,
           value: avgValue,
           entry: monthEntries[0], // Just for reference
         })
       }
+    } else if (timeRange === "month") {
+      // Month view - show target month from 1st to last day (with offset)
+      const now = new Date()
+      const targetDate = new Date(now.getFullYear(), now.getMonth() + chartOffset, 1)
+      const year = targetDate.getFullYear()
+      const month = targetDate.getMonth()
+      const daysInMonth = new Date(year, month + 1, 0).getDate()
+
+      for (let day = 1; day <= daysInMonth; day++) {
+        const date = new Date(year, month, day)
+        const dateStr = date.toISOString().split("T")[0]
+        const entry = filteredEntries.find((e) => e.date === dateStr)
+
+        data.push({
+          date: dateStr,
+          value: entry
+            ? (MOOD_OPTIONS.find((m) => m.type === entry.mood)?.value ?? null)
+            : null,
+          entry,
+        })
+      }
     } else {
-      // Week and month views - daily data
+      // Week view - daily data for target week (with offset)
       const days = rangeConfig[timeRange].days
-      
+      const endDate = new Date()
+      endDate.setDate(endDate.getDate() + chartOffset * 7)
+
       for (let i = days - 1; i >= 0; i--) {
-        const date = new Date()
-        date.setDate(date.getDate() - i)
+        const date = new Date(endDate)
+        date.setDate(endDate.getDate() - i)
         const dateStr = date.toISOString().split("T")[0]
         const entry = filteredEntries.find((e) => e.date === dateStr)
 
@@ -236,7 +307,44 @@ export default function TrendsScreen() {
     }
 
     return data
-  }, [timeRange, filteredEntries, entries])
+  }, [timeRange, filteredEntries, entries, chartOffset])
+
+  // Calculate date range for display and navigation
+  const { dateRangeText, hasEntriesBefore, hasEntriesAfter } = useMemo(() => {
+    if (chartData.length === 0) {
+      return { dateRangeText: "", hasEntriesBefore: false, hasEntriesAfter: false }
+    }
+
+    const startDate = chartData[0].date
+    const endDate = chartData[chartData.length - 1].date
+
+    let rangeText = ""
+    if (timeRange === "week") {
+      const start = new Date(startDate + "T00:00:00")
+      const end = new Date(endDate + "T00:00:00")
+      rangeText = `${start.toLocaleDateString("en-US", { month: "short", day: "numeric" })} - ${end.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}`
+    } else if (timeRange === "month") {
+      const date = new Date(startDate + "T00:00:00")
+      rangeText = date.toLocaleDateString("en-US", { month: "long", year: "numeric" })
+    } else {
+      const start = new Date(startDate + "-01T00:00:00")
+      const end = new Date(endDate + "-01T00:00:00")
+      rangeText = `${start.toLocaleDateString("en-US", { month: "short", year: "numeric" })} - ${end.toLocaleDateString("en-US", { month: "short", year: "numeric" })}`
+    }
+
+    // Check for entries before/after current view
+    let hasBefore = false
+    if (timeRange === "year") {
+      // For year view, startDate is "YYYY-MM", so compare with first day of that month
+      hasBefore = entries.some((e) => e.date < startDate + "-01")
+    } else {
+      hasBefore = entries.some((e) => e.date < startDate)
+    }
+    // Don't allow navigating forward past current period
+    const hasAfter = chartOffset < 0
+
+    return { dateRangeText: rangeText, hasEntriesBefore: hasBefore, hasEntriesAfter: hasAfter }
+  }, [chartData, entries, timeRange, chartOffset])
 
   const todaysMood = getTodaysMood()
   const todayFormatted = new Date().toLocaleDateString("en-US", {
@@ -250,31 +358,53 @@ export default function TrendsScreen() {
     const chartHeight = 150
     const maxBarHeight = chartHeight - chartPadding * 2
     const baseBarWidth =
-      timeRange === "week" ? 35 : timeRange === "month" ? 8 : 30
+      timeRange === "week" ? 35 : timeRange === "month" ? 10 : 30
     const baseGap = timeRange === "week" ? 8 : timeRange === "month" ? 3 : 10
     // Only apply zoom for year view
     const effectiveZoom = timeRange === "year" ? zoomLevel : 1
     const barWidth = baseBarWidth * effectiveZoom
     const gap = baseGap * effectiveZoom
 
-    const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
-    
+    const monthNames = [
+      "Jan",
+      "Feb",
+      "Mar",
+      "Apr",
+      "May",
+      "Jun",
+      "Jul",
+      "Aug",
+      "Sep",
+      "Oct",
+      "Nov",
+      "Dec",
+    ]
+
+    const dayLabels = ["S", "M", "T", "W", "T", "F", "S"]
+
     let xLabels: string[] = []
     if (timeRange === "week") {
-      xLabels = ["S", "M", "T", "W", "T", "F", "S"]
+      // Generate labels for each data point based on actual day of week
+      xLabels = chartData.map((d) => {
+        // Parse date parts directly to avoid timezone issues
+        const [year, month, day] = d.date.split("-").map(Number)
+        const date = new Date(year, month - 1, day)
+        return dayLabels[date.getDay()]
+      })
     } else if (timeRange === "month") {
-      // Show label every 5th day (1, 6, 11, 16, 21, 26)
-      const thisMonth = new Date().getMonth()
-      if ([1, 3, 5, 7, 8, 10, 12].includes(thisMonth)) {
-        xLabels = ["1", "7", "13", "19", "25", "31"]
-      } else if ([4, 6, 9, 11].includes(thisMonth)) {
-        xLabels = ["1", "7", "13", "19", "25", "30"]
-      } else {
-        xLabels = ["1", "6", "12", "17", "23", "28"]
-      }
+      // Generate labels for each data point, showing day number at intervals
+      xLabels = chartData.map((d, index) => {
+        // Parse day directly from YYYY-MM-DD string to avoid timezone issues
+        const dayOfMonth = parseInt(d.date.split("-")[2], 10)
+        // Show label every 5 days
+        if (index % 5 === 0) {
+          return dayOfMonth.toString()
+        }
+        return ""
+      })
     } else if (timeRange === "year") {
       // Generate labels based on the chartData month order
-      xLabels = chartData.map(d => {
+      xLabels = chartData.map((d) => {
         const monthIndex = parseInt(d.date.split("-")[1]) - 1
         return monthNames[monthIndex]
       })
@@ -282,6 +412,27 @@ export default function TrendsScreen() {
 
     return (
       <ThemedView style={styles.chartContainer}>
+        {/* Date range header with navigation */}
+        <View style={styles.chartHeader}>
+          <ThemedText style={styles.dateRangeText}>{dateRangeText}</ThemedText>
+          <View style={styles.chartNavigation}>
+            <TouchableOpacity
+              onPress={() => setChartOffset(chartOffset - 1)}
+              disabled={!hasEntriesBefore}
+              style={[styles.navArrow, !hasEntriesBefore && styles.navArrowDisabled]}
+            >
+              <ThemedText style={[styles.navArrowText, !hasEntriesBefore && styles.navArrowTextDisabled]}>←</ThemedText>
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={() => setChartOffset(chartOffset + 1)}
+              disabled={!hasEntriesAfter}
+              style={[styles.navArrow, !hasEntriesAfter && styles.navArrowDisabled]}
+            >
+              <ThemedText style={[styles.navArrowText, !hasEntriesAfter && styles.navArrowTextDisabled]}>→</ThemedText>
+            </TouchableOpacity>
+          </View>
+        </View>
+
         <View style={styles.chartGestureArea}>
           <View style={{ ...styles.chartRow, width: "100%" }}>
             {/* Y-axis labels - fixed position */}
@@ -299,6 +450,7 @@ export default function TrendsScreen() {
               showsHorizontalScrollIndicator={false}
               contentContainerStyle={styles.chartScrollContent}
               style={{ flex: 1 }}
+              onScrollBeginDrag={() => setSelectedBarIndex(null)}
             >
               <View>
                 {/* Chart */}
@@ -327,7 +479,9 @@ export default function TrendsScreen() {
                             y={y}
                             width={barWidth}
                             height={barHeight}
-                            fill={selectedBarIndex === index ? "#388E3C" : "#4CAF50"}
+                            fill={
+                              selectedBarIndex === index ? "#388E3C" : "#4CAF50"
+                            }
                             rx={4}
                             ry={4}
                           />
@@ -393,46 +547,31 @@ export default function TrendsScreen() {
                       </>
                     )}
                   </Svg>
-                  
+
                   {/* Touchable overlays for bar chart */}
-                  {timeRange === "year" && chartData.map((point, index) => {
-                    if (point.value === null) return null
-                    const x = index * (barWidth + gap)
-                    return (
-                      <TouchableOpacity
-                        key={`touch-${index}`}
-                        style={{
-                          position: "absolute",
-                          left: x,
-                          top: 0,
-                          width: barWidth,
-                          height: chartHeight,
-                        }}
-                        onPress={() => setSelectedBarIndex(selectedBarIndex === index ? null : index)}
-                        activeOpacity={0.7}
-                      />
-                    )
-                  })}
-                  
-                  {/* Tooltip for selected bar */}
-                  {timeRange === "year" && selectedBarIndex !== null && chartData[selectedBarIndex]?.value !== null && (
-                    <View
-                      style={[
-                        styles.barTooltip,
-                        {
-                          left: selectedBarIndex * (barWidth + gap) + barWidth / 2 - 40,
-                          top: chartPadding + maxBarHeight - ((chartData[selectedBarIndex].value! - 1) / 4) * maxBarHeight - 50,
-                        },
-                      ]}
-                    >
-                      <ThemedText style={styles.barTooltipEmoji}>
-                        {getMoodByValue(Math.round(chartData[selectedBarIndex].value!))?.emoji ?? "😐"}
-                      </ThemedText>
-                      <ThemedText style={styles.barTooltipText}>
-                        {chartData[selectedBarIndex].value!.toFixed(1)}
-                      </ThemedText>
-                    </View>
-                  )}
+                  {timeRange === "year" &&
+                    chartData.map((point, index) => {
+                      if (point.value === null) return null
+                      const x = index * (barWidth + gap)
+                      return (
+                        <TouchableOpacity
+                          key={`touch-${index}`}
+                          style={{
+                            position: "absolute",
+                            left: x,
+                            top: 0,
+                            width: barWidth,
+                            height: chartHeight,
+                          }}
+                          onPress={() =>
+                            setSelectedBarIndex(
+                              selectedBarIndex === index ? null : index,
+                            )
+                          }
+                          activeOpacity={0.7}
+                        />
+                      )
+                    })}
                 </View>
 
                 {/* X-axis labels */}
@@ -443,7 +582,15 @@ export default function TrendsScreen() {
                   }}
                 >
                   {xLabels.map((label, index) => (
-                    <ThemedText key={index} style={styles.xAxisLabel}>
+                    <ThemedText
+                      key={index}
+                      style={[
+                        styles.xAxisLabel,
+                        { width: barWidth + gap, textAlign: "center" },
+                        timeRange === "month" && { fontSize: 10 },
+                      ]}
+                      numberOfLines={1}
+                    >
                       {label}
                     </ThemedText>
                   ))}
@@ -452,6 +599,41 @@ export default function TrendsScreen() {
             </ScrollView>
           </View>
         </View>
+
+        {/* Tooltip for selected bar - rendered outside ScrollView to appear on top */}
+        {timeRange === "year" &&
+          selectedBarIndex !== null &&
+          chartData[selectedBarIndex]?.value !== null && (
+            <View
+              style={[
+                styles.barTooltip,
+                {
+                  left:
+                    40 + // yAxis width + margin
+                    selectedBarIndex * (barWidth + gap) +
+                    barWidth / 2 -
+                    40,
+                  top:
+                    chartPadding +
+                    maxBarHeight -
+                    ((chartData[selectedBarIndex].value! - 1) / 4) *
+                      maxBarHeight -
+                    50,
+                },
+              ]}
+            >
+              <ThemedText style={styles.barTooltipEmoji}>
+                {getMoodByValue(Math.round(chartData[selectedBarIndex].value!))
+                  ?.emoji ?? "😐"}
+              </ThemedText>
+              <ThemedText style={styles.barTooltipText}>
+                Avg Mood: {chartData[selectedBarIndex].value!.toFixed(1)} (
+                {getMoodByValue(Math.round(chartData[selectedBarIndex].value!))
+                  ?.label ?? "Neutral"}
+                )
+              </ThemedText>
+            </View>
+          )}
       </ThemedView>
     )
   }
@@ -558,6 +740,7 @@ export default function TrendsScreen() {
               onPress={() => {
                 setTimeRange(range)
                 setSelectedBarIndex(null)
+                setChartOffset(0)
               }}
             >
               <ThemedText
@@ -664,7 +847,14 @@ export default function TrendsScreen() {
               <ThemedText style={styles.statEmoji}>📊</ThemedText>
               <ThemedText style={styles.statLabel}>Entries</ThemedText>
               <ThemedText style={styles.statValue}>
-                {filteredEntries.length} / {rangeConfig[timeRange].days}
+                {filteredEntries.length} /{" "}
+                {timeRange === "month"
+                  ? new Date(
+                      new Date().getFullYear(),
+                      new Date().getMonth() + chartOffset + 1,
+                      0,
+                    ).getDate()
+                  : rangeConfig[timeRange].days}
               </ThemedText>
             </ThemedView>
           </View>
@@ -673,15 +863,22 @@ export default function TrendsScreen() {
         {/* Recent Entries */}
         {filteredEntries.length > 0 && (
           <ThemedView style={styles.recentContainer}>
-            <ThemedText type="subtitle" style={styles.recentTitle}>
-              Recent Entries
-            </ThemedText>
+            <View style={styles.recentHeader}>
+              <ThemedText type="subtitle" style={styles.recentTitle}>
+                Recent Entries
+              </ThemedText>
+              {filteredEntries.length > 3 && (
+                <TouchableOpacity onPress={() => router.push("/entries")}>
+                  <ThemedText style={styles.showAllText}>Show all</ThemedText>
+                </TouchableOpacity>
+              )}
+            </View>
             {[...filteredEntries]
               .sort(
                 (a, b) =>
                   new Date(b.date).getTime() - new Date(a.date).getTime(),
               )
-              .slice(0, 5)
+              .slice(0, 3)
               .map((entry) => {
                 const mood = getMoodOption(entry.mood)
                 return (
@@ -726,6 +923,138 @@ export default function TrendsScreen() {
       </ScrollView>
 
       {renderMoodModal()}
+
+      {/* Dev-only Add Entry Modal */}
+      {__DEV__ && (
+        <Modal
+          animationType="slide"
+          transparent={true}
+          visible={devModalVisible}
+          onRequestClose={() => setDevModalVisible(false)}
+        >
+          <View style={styles.modalOverlay}>
+            <ThemedView style={[styles.modalContent, { backgroundColor }]}>
+              <View style={styles.modalHeader}>
+                <ThemedText type="subtitle">Add Test Entry</ThemedText>
+                <TouchableOpacity
+                  onPress={() => setDevModalVisible(false)}
+                  style={styles.closeButton}
+                >
+                  <ThemedText style={styles.closeButtonText}>✕</ThemedText>
+                </TouchableOpacity>
+              </View>
+
+              <ThemedText style={styles.noteLabel}>Select Date</ThemedText>
+              <Calendar
+                onDayPress={(day: { dateString: string }) => {
+                  if (!entries.find((e) => e.date === day.dateString)) {
+                    setDevDate(day.dateString)
+                  }
+                }}
+                markedDates={{
+                  ...entries.reduce(
+                    (acc, entry) => {
+                      acc[entry.date] = {
+                        disabled: true,
+                        disabledColor: textColor + "30",
+                        disabledTextColor: textColor + "60",
+                      }
+                      return acc
+                    },
+                    {} as Record<string, any>,
+                  ),
+                  [devDate]: {
+                    selected: true,
+                    selectedColor: "#4CAF50",
+                    selectedTextColor: "#fff",
+                  },
+                }}
+                maxDate={new Date().toISOString().split("T")[0]}
+                theme={{
+                  backgroundColor: backgroundColor,
+                  calendarBackground: backgroundColor,
+                  textSectionTitleColor: textColor,
+                  selectedDayBackgroundColor: "#4CAF50",
+                  selectedDayTextColor: "#fff",
+                  todayTextColor: "#4CAF50",
+                  dayTextColor: textColor,
+                  textDisabledColor: textColor + "40",
+                  dotColor: "#4CAF50",
+                  selectedDotColor: "#fff",
+                  monthTextColor: textColor,
+                  indicatorColor: "#4CAF50",
+                  arrowColor: "#4CAF50",
+                  disabledArrowColor: textColor + "40",
+                }}
+              />
+
+              <ThemedText style={[styles.noteLabel, { marginTop: 16 }]}>
+                Selected: {devDate || "None"}
+              </ThemedText>
+
+              <View style={styles.moodContainer}>
+                {MOOD_OPTIONS.map((mood) => (
+                  <TouchableOpacity
+                    key={mood.type}
+                    style={[
+                      styles.moodButton,
+                      devSelectedMood === mood.type && {
+                        backgroundColor: mood.color + "30",
+                        borderColor: mood.color,
+                        borderWidth: 3,
+                      },
+                    ]}
+                    onPress={() => setDevSelectedMood(mood.type)}
+                    activeOpacity={0.7}
+                  >
+                    <ThemedText style={styles.moodEmoji}>
+                      {mood.emoji}
+                    </ThemedText>
+                    <ThemedText style={styles.moodLabel} numberOfLines={1}>
+                      {mood.label}
+                    </ThemedText>
+                  </TouchableOpacity>
+                ))}
+              </View>
+
+              <TouchableOpacity
+                style={[
+                  styles.saveButton,
+                  (!devSelectedMood || !devDate) && styles.saveButtonDisabled,
+                ]}
+                onPress={async () => {
+                  if (devSelectedMood && devDate) {
+                    const success = await saveMoodForDate(
+                      devSelectedMood,
+                      devDate,
+                    )
+                    if (success) {
+                      setDevModalVisible(false)
+                      setDevSelectedMood(null)
+                      setDevDate("")
+                      Alert.alert("Saved!", `Test entry added for ${devDate}`)
+                    }
+                  }
+                }}
+                disabled={!devSelectedMood || !devDate}
+                activeOpacity={0.8}
+              >
+                <ThemedText style={styles.saveButtonText}>Add Entry</ThemedText>
+              </TouchableOpacity>
+            </ThemedView>
+          </View>
+        </Modal>
+      )}
+
+      {/* Dev-only Add Entry Button */}
+      {__DEV__ && (
+        <TouchableOpacity
+          style={styles.devButton}
+          onPress={() => setDevModalVisible(true)}
+        >
+          <ThemedText style={styles.devButtonText}>+ Add Test Entry</ThemedText>
+        </TouchableOpacity>
+      )}
     </View>
   )
 }
@@ -767,6 +1096,37 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     padding: 16,
     backgroundColor: "rgba(150, 150, 150, 0.05)",
+    position: "relative",
+  },
+  chartHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 12,
+  },
+  dateRangeText: {
+    fontSize: 14,
+    fontWeight: "600",
+  },
+  chartNavigation: {
+    flexDirection: "row",
+    gap: 8,
+  },
+  navArrow: {
+    paddingHorizontal: 12,
+    paddingVertical: 4,
+    borderRadius: 8,
+    backgroundColor: "rgba(150, 150, 150, 0.15)",
+  },
+  navArrowDisabled: {
+    opacity: 0.3,
+  },
+  navArrowText: {
+    fontSize: 16,
+    fontWeight: "600",
+  },
+  navArrowTextDisabled: {
+    opacity: 0.5,
   },
   pinchHint: {
     fontSize: 11,
@@ -816,10 +1176,13 @@ const styles = StyleSheet.create({
     position: "absolute",
     backgroundColor: "rgba(0, 0, 0, 0.85)",
     borderRadius: 8,
-    padding: 8,
+    paddingTop: 16,
+    paddingHorizontal: 8,
+    paddingBottom: 8,
     alignItems: "center",
     minWidth: 80,
-    zIndex: 100,
+    zIndex: 9999,
+    elevation: 10,
   },
   barTooltipEmoji: {
     fontSize: 24,
@@ -832,16 +1195,11 @@ const styles = StyleSheet.create({
   },
   xAxisContainer: {
     flexDirection: "row",
-    justifyContent: "space-between",
   },
   xAxisLabel: {
     marginTop: 4,
     fontSize: 12,
     opacity: 0.7,
-    flexShrink: 0,
-    display: "flex",
-    flexDirection: "row",
-    justifyContent: "space-between",
   },
   xAxisLabelYear: {
     fontSize: 8,
@@ -1016,8 +1374,19 @@ const styles = StyleSheet.create({
   recentContainer: {
     marginBottom: 24,
   },
-  recentTitle: {
+  recentHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
     marginBottom: 16,
+  },
+  recentTitle: {
+    marginBottom: 0,
+  },
+  showAllText: {
+    color: "#4CAF50",
+    fontWeight: "600",
+    fontSize: 14,
   },
   entryCard: {
     flexDirection: "row",
@@ -1066,5 +1435,24 @@ const styles = StyleSheet.create({
   emptySubtext: {
     opacity: 0.7,
     textAlign: "center",
+  },
+  devButton: {
+    position: "absolute",
+    bottom: 20,
+    right: 20,
+    backgroundColor: "#FF9800",
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 24,
+    elevation: 4,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+  },
+  devButtonText: {
+    color: "white",
+    fontWeight: "600",
+    fontSize: 14,
   },
 })

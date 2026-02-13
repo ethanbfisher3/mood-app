@@ -254,30 +254,32 @@ export default function NotificationsScreen() {
             </TouchableOpacity>
           )}
 
-          <TouchableOpacity
-            style={[styles.permissionButton, styles.testButton]}
-            onPress={async () => {
-              if (!hasPermission) {
-                const granted = await requestPermissions()
-                if (!granted) {
-                  Alert.alert(
-                    "Permission Required",
-                    "Please grant notification permissions to test.",
-                  )
-                  return
+          {__DEV__ && (
+            <TouchableOpacity
+              style={[styles.permissionButton, styles.testButton]}
+              onPress={async () => {
+                if (!hasPermission) {
+                  const granted = await requestPermissions()
+                  if (!granted) {
+                    Alert.alert(
+                      "Permission Required",
+                      "Please grant notification permissions to test.",
+                    )
+                    return
+                  }
                 }
-              }
-              await setupNotificationCategories()
-              await Notifications.scheduleNotificationAsync({
-                content: createMoodReminderContent(),
-                trigger: null, // Send immediately
-              })
-            }}
-          >
-            <ThemedText style={styles.permissionButtonText}>
-              🧪 Test Expandable Notification
-            </ThemedText>
-          </TouchableOpacity>
+                await setupNotificationCategories()
+                await Notifications.scheduleNotificationAsync({
+                  content: createMoodReminderContent(),
+                  trigger: null, // Send immediately
+                })
+              }}
+            >
+              <ThemedText style={styles.permissionButtonText}>
+                🧪 Test Expandable Notification
+              </ThemedText>
+            </TouchableOpacity>
+          )}
         </ThemedView>
 
         {/* Tips */}
@@ -286,11 +288,10 @@ export default function NotificationsScreen() {
             💡 Tips
           </ThemedText>
           <ThemedText style={styles.tipText}>
-            • Choose a time when you're usually winding down, like evening
+            • Choose a time when you're usually winding down, like nighttime
           </ThemedText>
           <ThemedText style={styles.tipText}>
-            • Swipe down on iOS or pull down on Android to expand the
-            notification and see mood options
+            • Swipe down to expand the notification and see mood options
           </ThemedText>
           <ThemedText style={styles.tipText}>
             • Reflecting on your day helps with emotional awareness
