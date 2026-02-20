@@ -13,6 +13,7 @@ Mood Insights
 
 DEV:
 Entries can be tapped on deleted (by swiping to the left) from under the 'Recent Entries' section
+'Delete All' button on recent entries list
 
 
 PROD:
