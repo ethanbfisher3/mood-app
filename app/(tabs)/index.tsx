@@ -7,6 +7,7 @@ import {
   Dimensions,
   Modal,
   ScrollView,
+  Share,
   StyleSheet,
   TextInput,
   TouchableOpacity,
@@ -26,6 +27,7 @@ import {
   MoodType,
 } from "@/constants/moods"
 import { useMoodStorage } from "@/hooks/use-mood-storage"
+import { PRO_FEATURES, useProSubscription } from "@/hooks/use-pro-subscription"
 import { useThemeColor } from "@/hooks/use-theme-color"
 
 type TimeRange = "week" | "month" | "year"
@@ -34,7 +36,7 @@ const SCREEN_WIDTH = Dimensions.get("window").width
 const CHART_PADDING = 40
 const CHART_WIDTH = SCREEN_WIDTH - CHART_PADDING * 2
 
-export default function TrendsScreen() {
+export default function TrendsScreen({ isDevView }: { isDevView?: boolean }) {
   const router = useRouter()
   const {
     entries,
@@ -43,6 +45,7 @@ export default function TrendsScreen() {
     saveMood,
     saveMoodForDate,
     getTodaysMood,
+    getTodaysMoods,
   } = useMoodStorage()
   const [timeRange, setTimeRange] = useState<TimeRange>("week")
   const [modalVisible, setModalVisible] = useState(false)
@@ -55,8 +58,11 @@ export default function TrendsScreen() {
   const [devModalVisible, setDevModalVisible] = useState(false)
   const [devSelectedMood, setDevSelectedMood] = useState<MoodType | null>(null)
   const [devDate, setDevDate] = useState("")
+  const [upgradeModalVisible, setUpgradeModalVisible] = useState(false)
   const baseZoom = useSharedValue(1)
   const pinchScale = useSharedValue(1)
+
+  const { isPro, togglePro } = useProSubscription()
 
   const backgroundColor = useThemeColor({}, "background")
   const textColor = useThemeColor({}, "text")
@@ -90,16 +96,22 @@ export default function TrendsScreen() {
 
   // Load today's mood when modal opens
   const openMoodModal = useCallback(() => {
-    const todaysMood = getTodaysMood()
-    if (todaysMood) {
-      setSelectedMood(todaysMood.mood)
-      setNote(todaysMood.note || "")
-    } else {
+    if (isPro) {
+      // Pro users always start fresh to add another mood
       setSelectedMood(null)
       setNote("")
+    } else {
+      const todaysMood = getTodaysMood()
+      if (todaysMood) {
+        setSelectedMood(todaysMood.mood)
+        setNote(todaysMood.note || "")
+      } else {
+        setSelectedMood(null)
+        setNote("")
+      }
     }
     setModalVisible(true)
-  }, [getTodaysMood])
+  }, [getTodaysMood, isPro])
 
   const handleSaveMood = async () => {
     if (!selectedMood) {
@@ -108,12 +120,16 @@ export default function TrendsScreen() {
     }
 
     setIsSaving(true)
-    const success = await saveMood(selectedMood, note.trim() || undefined)
+    const success = await saveMood(
+      selectedMood,
+      note.trim() || undefined,
+      isPro, // append multiple for Pro users
+    )
     setIsSaving(false)
 
     if (success) {
       setModalVisible(false)
-      Alert.alert("Saved!", "Your mood has been logged for today. 🎉")
+      Alert.alert("Saved!", "Your mood has been logged. 🎉")
     } else {
       Alert.alert("Error", "Failed to save your mood. Please try again.")
     }
@@ -216,6 +232,223 @@ export default function TrendsScreen() {
 
     return { avgMood, mostCommon, streak }
   }, [filteredEntries, entries])
+
+  // Advanced analytics (Pro feature)
+  const advancedStats = useMemo(() => {
+    if (entries.length === 0) {
+      return {
+        moodDistribution: [] as {
+          mood: MoodType
+          count: number
+          percentage: number
+        }[],
+        bestDayOfWeek: null as string | null,
+        worstDayOfWeek: null as string | null,
+        moodVariability: 0,
+        longestStreak: 0,
+        totalEntries: 0,
+      }
+    }
+
+    // Mood distribution
+    const moodCounts: Record<string, number> = {}
+    entries.forEach((e) => {
+      moodCounts[e.mood] = (moodCounts[e.mood] || 0) + 1
+    })
+    const moodDistribution = MOOD_OPTIONS.map((m) => ({
+      mood: m.type,
+      count: moodCounts[m.type] || 0,
+      percentage: ((moodCounts[m.type] || 0) / entries.length) * 100,
+    })).filter((d) => d.count > 0)
+
+    // Best/worst day of week
+    const dayNames = [
+      "Sunday",
+      "Monday",
+      "Tuesday",
+      "Wednesday",
+      "Thursday",
+      "Friday",
+      "Saturday",
+    ]
+    const dayMoods: Record<number, number[]> = {}
+    entries.forEach((e) => {
+      const [y, m, d] = e.date.split("-").map(Number)
+      const day = new Date(y, m - 1, d).getDay()
+      if (!dayMoods[day]) dayMoods[day] = []
+      const val = MOOD_OPTIONS.find((mo) => mo.type === e.mood)?.value ?? 3
+      dayMoods[day].push(val)
+    })
+    let bestDay: string | null = null
+    let worstDay: string | null = null
+    let bestAvg = -1
+    let worstAvg = 6
+    Object.entries(dayMoods).forEach(([day, values]) => {
+      if (values.length < 2) return
+      const avg = values.reduce((a, b) => a + b, 0) / values.length
+      if (avg > bestAvg) {
+        bestAvg = avg
+        bestDay = dayNames[parseInt(day)]
+      }
+      if (avg < worstAvg) {
+        worstAvg = avg
+        worstDay = dayNames[parseInt(day)]
+      }
+    })
+
+    // Mood variability (standard deviation)
+    const allValues = entries.map(
+      (e) => MOOD_OPTIONS.find((m) => m.type === e.mood)?.value ?? 3,
+    )
+    const mean = allValues.reduce((a, b) => a + b, 0) / allValues.length
+    const variance =
+      allValues.reduce((sum, v) => sum + Math.pow(v - mean, 2), 0) /
+      allValues.length
+    const moodVariability = Math.sqrt(variance)
+
+    // Longest streak
+    const sorted = [...entries].sort((a, b) => a.date.localeCompare(b.date))
+    let longestStreak = 0
+    let currentStreak = 1
+    for (let i = 1; i < sorted.length; i++) {
+      const prev = new Date(sorted[i - 1].date)
+      const curr = new Date(sorted[i].date)
+      const diffDays = (curr.getTime() - prev.getTime()) / (1000 * 60 * 60 * 24)
+      if (diffDays === 1) {
+        currentStreak++
+      } else if (diffDays > 1) {
+        currentStreak = 1
+      }
+      longestStreak = Math.max(longestStreak, currentStreak)
+    }
+    if (sorted.length === 1) longestStreak = 1
+
+    return {
+      moodDistribution,
+      bestDayOfWeek: bestDay,
+      worstDayOfWeek: worstDay,
+      moodVariability,
+      longestStreak,
+      totalEntries: entries.length,
+    }
+  }, [entries])
+
+  // AI Mood Insights (Pro feature)
+  const insights = useMemo(() => {
+    const result: { emoji: string; text: string }[] = []
+    if (entries.length < 3) return result
+
+    // Streak insight
+    if (stats.streak >= 7) {
+      result.push({
+        emoji: "🔥",
+        text: `Amazing! You're on a ${stats.streak}-day streak. Consistency is key to understanding your emotions.`,
+      })
+    } else if (stats.streak >= 3) {
+      result.push({
+        emoji: "👏",
+        text: `Nice ${stats.streak}-day streak! Keep logging daily to build a clear picture of your mood patterns.`,
+      })
+    }
+
+    // Trend insight - compare recent week to overall
+    const recentEntries = entries.filter((e) => {
+      const d = new Date(e.date)
+      const now = new Date()
+      return (now.getTime() - d.getTime()) / (1000 * 60 * 60 * 24) <= 7
+    })
+    if (recentEntries.length >= 3 && entries.length >= 10) {
+      const recentAvg =
+        recentEntries
+          .map((e) => MOOD_OPTIONS.find((m) => m.type === e.mood)?.value ?? 3)
+          .reduce((a, b) => a + b, 0) / recentEntries.length
+      const overallAvg = stats.avgMood
+      const diff = recentAvg - overallAvg
+      if (diff > 0.5) {
+        result.push({
+          emoji: "📈",
+          text: `Your mood this week is trending higher than your average. Whatever you're doing, keep it up!`,
+        })
+      } else if (diff < -0.5) {
+        result.push({
+          emoji: "💙",
+          text: `Your mood has been a bit lower this week compared to your average. Consider activities that usually lift your spirits.`,
+        })
+      }
+    }
+
+    // Best day insight
+    if (advancedStats.bestDayOfWeek) {
+      result.push({
+        emoji: "☀️",
+        text: `${advancedStats.bestDayOfWeek}s tend to be your best days. Plan activities you enjoy on your harder days!`,
+      })
+    }
+
+    // Variability insight
+    if (advancedStats.moodVariability > 1.2) {
+      result.push({
+        emoji: "🎢",
+        text: `Your moods show significant variation. Journaling notes with your entries may help identify triggers.`,
+      })
+    } else if (advancedStats.moodVariability < 0.5 && entries.length >= 7) {
+      result.push({
+        emoji: "⚖️",
+        text: `Your mood has been quite stable. This consistency suggests good emotional balance.`,
+      })
+    }
+
+    // Note-taking insight
+    const entriesWithNotes = entries.filter(
+      (e) => e.note && e.note.trim().length > 0,
+    )
+    if (entriesWithNotes.length === 0 && entries.length >= 5) {
+      result.push({
+        emoji: "📝",
+        text: `Try adding notes to your mood entries — it helps you reflect on what influences your feelings.`,
+      })
+    } else if (entriesWithNotes.length > entries.length * 0.5) {
+      result.push({
+        emoji: "✍️",
+        text: `Great job adding notes! Your reflections make your mood data much more meaningful.`,
+      })
+    }
+
+    // Longest streak
+    if (advancedStats.longestStreak >= 14) {
+      result.push({
+        emoji: "🏆",
+        text: `Your all-time longest streak is ${advancedStats.longestStreak} days. Incredible dedication!`,
+      })
+    }
+
+    return result.slice(0, 4) // Max 4 insights
+  }, [entries, stats, advancedStats])
+
+  // Export mood data as CSV
+  const handleExportCSV = useCallback(async () => {
+    if (entries.length === 0) {
+      Alert.alert("No Data", "There are no mood entries to export.")
+      return
+    }
+    const header = "Date,Mood,Value,Note"
+    const rows = [...entries]
+      .sort((a, b) => a.date.localeCompare(b.date))
+      .map((e) => {
+        const val = MOOD_OPTIONS.find((m) => m.type === e.mood)?.value ?? 3
+        const note = e.note ? `"${e.note.replace(/"/g, '""')}"` : ""
+        return `${e.date},${e.mood},${val},${note}`
+      })
+    const csv = [header, ...rows].join("\n")
+    try {
+      await Share.share({
+        message: csv,
+        title: "Mood Tracker Data Export",
+      })
+    } catch (error) {
+      Alert.alert("Export Failed", "Unable to share mood data.")
+    }
+  }, [entries])
 
   // Generate chart data points
   const chartData = useMemo(() => {
@@ -366,11 +599,16 @@ export default function TrendsScreen() {
   }, [chartData, entries, timeRange, chartOffset])
 
   const todaysMood = getTodaysMood()
-  const todayFormatted = new Date().toLocaleDateString("en-US", {
+  const todaysMoods = getTodaysMoods()
+  const now = new Date()
+  const todayFormatted = `${now.toLocaleDateString("en-US", {
     weekday: "long",
     month: "short",
     day: "numeric",
-  })
+  })}, ${now.toLocaleTimeString("en-US", {
+    hour: "numeric",
+    minute: "2-digit",
+  })}`
 
   const renderSimpleChart = () => {
     const chartPadding = 6 // Padding to prevent point cutoff
@@ -750,9 +988,11 @@ export default function TrendsScreen() {
             <ThemedText style={styles.saveButtonText}>
               {isSaving
                 ? "Saving..."
-                : todaysMood
-                  ? "Update Mood"
-                  : "Save Mood"}
+                : isPro
+                  ? "Add Mood"
+                  : todaysMood
+                    ? "Update Mood"
+                    : "Save Mood"}
             </ThemedText>
           </TouchableOpacity>
         </ThemedView>
@@ -769,135 +1009,355 @@ export default function TrendsScreen() {
 
         {/* Time Range Buttons */}
         <ThemedView style={styles.rangeButtonsContainer}>
-          {(["week", "month", "year"] as TimeRange[]).map((range) => (
-            <TouchableOpacity
-              key={range}
-              style={[
-                styles.rangeButton,
-                timeRange === range && styles.rangeButtonActive,
-              ]}
-              onPress={() => {
-                setTimeRange(range)
-                setSelectedBarIndex(null)
-                setChartOffset(0)
-              }}
-            >
-              <ThemedText
+          {(["week", "month", "year"] as TimeRange[]).map((range) => {
+            const isDisabled = range === "year" && !isPro
+            return (
+              <TouchableOpacity
+                key={range}
                 style={[
-                  styles.rangeButtonText,
-                  timeRange === range && styles.rangeButtonTextActive,
+                  styles.rangeButton,
+                  timeRange === range && styles.rangeButtonActive,
+                  isDisabled && styles.rangeButtonDisabled,
                 ]}
+                onPress={() => {
+                  if (isDisabled) {
+                    setUpgradeModalVisible(true)
+                    return
+                  }
+                  setTimeRange(range)
+                  setSelectedBarIndex(null)
+                  setChartOffset(0)
+                }}
               >
-                {rangeConfig[range].label}
-              </ThemedText>
-            </TouchableOpacity>
-          ))}
+                <ThemedText
+                  style={[
+                    styles.rangeButtonText,
+                    timeRange === range && styles.rangeButtonTextActive,
+                    isDisabled && styles.rangeButtonTextDisabled,
+                  ]}
+                >
+                  {rangeConfig[range].label}
+                  {isDisabled ? " 🔒" : ""}
+                </ThemedText>
+              </TouchableOpacity>
+            )
+          })}
         </ThemedView>
 
         {/* Chart */}
         {renderSimpleChart()}
 
-        {/* Today's Mood Button */}
-        <TouchableOpacity
-          style={[
-            styles.todayMoodButton,
-            todaysMood && {
-              borderColor: getMoodOption(todaysMood.mood).color,
-              backgroundColor: getMoodOption(todaysMood.mood).color + "15",
-            },
-          ]}
-          onPress={openMoodModal}
-          activeOpacity={0.7}
-        >
-          {todaysMood ? (
-            <View style={styles.todayMoodContent}>
-              <ThemedText style={styles.todayMoodEmoji}>
-                {getMoodOption(todaysMood.mood).emoji}
+        {/* Upgrade to Pro Button - only show if not pro */}
+        {!isPro && (
+          <TouchableOpacity
+            style={styles.upgradeButton}
+            onPress={() => setUpgradeModalVisible(true)}
+            activeOpacity={0.8}
+          >
+            <ThemedText style={styles.upgradeButtonEmoji}>⭐</ThemedText>
+            <View style={styles.upgradeButtonTextContainer}>
+              <ThemedText style={styles.upgradeButtonTitle}>
+                Upgrade to Pro
               </ThemedText>
-              <View style={styles.todayMoodTextContainer}>
-                <ThemedText style={styles.todayMoodLabel}>
-                  Today's Mood
-                </ThemedText>
-                <ThemedText style={styles.todayMoodValue}>
-                  {getMoodOption(todaysMood.mood).label}
-                </ThemedText>
-              </View>
-              <ThemedText style={styles.todayMoodEdit}>Edit</ThemedText>
+              <ThemedText style={styles.upgradeButtonSubtitle}>
+                Unlock Year view, Show all entries & more
+              </ThemedText>
             </View>
-          ) : (
-            <View style={styles.todayMoodContent}>
-              <ThemedText style={styles.todayMoodEmoji}>➕</ThemedText>
-              <View style={styles.todayMoodTextContainer}>
-                <ThemedText style={styles.todayMoodLabel}>
-                  Log Today's Mood
-                </ThemedText>
-                <ThemedText style={styles.todayMoodSubtext}>
-                  Tap to record how you're feeling
-                </ThemedText>
-              </View>
-            </View>
-          )}
-        </TouchableOpacity>
+            <ThemedText style={styles.upgradeButtonArrow}>→</ThemedText>
+          </TouchableOpacity>
+        )}
 
-        {/* Stats */}
-        <ThemedView style={styles.statsContainer}>
-          <ThemedText type="subtitle" style={styles.statsTitle}>
-            Statistics
-          </ThemedText>
-
-          <View style={styles.statsGrid}>
-            <ThemedView style={styles.statCard}>
-              <ThemedText style={styles.statEmoji}>
-                {stats.avgMood > 0
-                  ? getMoodByValue(Math.round(stats.avgMood)).emoji
-                  : "—"}
-              </ThemedText>
-              <ThemedText style={styles.statLabel}>Average Mood</ThemedText>
-              <ThemedText style={styles.statValue}>
-                {stats.avgMood > 0
-                  ? stats.avgMood.toFixed(1) + "/5"
-                  : "No data"}
-              </ThemedText>
-            </ThemedView>
-
-            <ThemedView style={styles.statCard}>
-              <ThemedText style={styles.statEmoji}>
-                {stats.mostCommon
-                  ? getMoodOption(stats.mostCommon as any).emoji
-                  : "—"}
-              </ThemedText>
-              <ThemedText style={styles.statLabel}>Most Common</ThemedText>
-              <ThemedText style={styles.statValue}>
-                {stats.mostCommon
-                  ? getMoodOption(stats.mostCommon as any).label
-                  : "No data"}
-              </ThemedText>
-            </ThemedView>
-
-            <ThemedView style={styles.statCard}>
-              <ThemedText style={styles.statEmoji}>🔥</ThemedText>
-              <ThemedText style={styles.statLabel}>Current Streak</ThemedText>
-              <ThemedText style={styles.statValue}>
-                {stats.streak} {stats.streak === 1 ? "day" : "days"}
-              </ThemedText>
-            </ThemedView>
-
-            <ThemedView style={styles.statCard}>
-              <ThemedText style={styles.statEmoji}>📊</ThemedText>
-              <ThemedText style={styles.statLabel}>Entries</ThemedText>
-              <ThemedText style={styles.statValue}>
-                {filteredEntries.length} /{" "}
-                {timeRange === "month"
-                  ? new Date(
-                      new Date().getFullYear(),
-                      new Date().getMonth() + chartOffset + 1,
-                      0,
-                    ).getDate()
-                  : rangeConfig[timeRange].days}
-              </ThemedText>
-            </ThemedView>
+        {/* Pro Badge - show if pro */}
+        {isPro && (
+          <View style={styles.proBadge}>
+            <ThemedText style={styles.proBadgeEmoji}>⭐</ThemedText>
+            <ThemedText style={styles.proBadgeText}>Pro Member</ThemedText>
           </View>
-        </ThemedView>
+        )}
+
+        {/* Today's Mood Button */}
+        {isPro && todaysMoods.length > 0 ? (
+          <ThemedView style={styles.todayMoodMultiContainer}>
+            <View style={styles.todayMoodMultiHeader}>
+              <ThemedText style={styles.todayMoodMultiTitle}>
+                🎭 Today's Moods
+              </ThemedText>
+              <ThemedText style={styles.todayMoodMultiCount}>
+                {todaysMoods.length}{" "}
+                {todaysMoods.length === 1 ? "entry" : "entries"}
+              </ThemedText>
+            </View>
+            {todaysMoods.map((entry) => {
+              const mood = getMoodOption(entry.mood)
+              return (
+                <View
+                  key={entry.id}
+                  style={[
+                    styles.todayMoodMultiEntry,
+                    { borderLeftColor: mood.color },
+                  ]}
+                >
+                  <ThemedText style={styles.todayMoodMultiEmoji}>
+                    {mood.emoji}
+                  </ThemedText>
+                  <View style={styles.todayMoodMultiInfo}>
+                    <ThemedText style={styles.todayMoodMultiMood}>
+                      {mood.label}
+                    </ThemedText>
+                    {entry.note && (
+                      <ThemedText
+                        style={styles.todayMoodMultiNote}
+                        numberOfLines={1}
+                      >
+                        {entry.note}
+                      </ThemedText>
+                    )}
+                  </View>
+                  <ThemedText style={styles.todayMoodMultiTime}>
+                    {entry.time || ""}
+                  </ThemedText>
+                </View>
+              )
+            })}
+            <TouchableOpacity
+              style={styles.addAnotherMoodButton}
+              onPress={openMoodModal}
+              activeOpacity={0.7}
+            >
+              <ThemedText style={styles.addAnotherMoodText}>
+                + Log Another Mood
+              </ThemedText>
+            </TouchableOpacity>
+          </ThemedView>
+        ) : (
+          <TouchableOpacity
+            style={[
+              styles.todayMoodButton,
+              todaysMood && {
+                borderColor: getMoodOption(todaysMood.mood).color,
+                backgroundColor: getMoodOption(todaysMood.mood).color + "15",
+              },
+            ]}
+            onPress={openMoodModal}
+            activeOpacity={0.7}
+          >
+            {todaysMood ? (
+              <View style={styles.todayMoodContent}>
+                <ThemedText style={styles.todayMoodEmoji}>
+                  {getMoodOption(todaysMood.mood).emoji}
+                </ThemedText>
+                <View style={styles.todayMoodTextContainer}>
+                  <ThemedText style={styles.todayMoodLabel}>
+                    Today's Mood
+                  </ThemedText>
+                  <ThemedText style={styles.todayMoodValue}>
+                    {getMoodOption(todaysMood.mood).label}
+                  </ThemedText>
+                </View>
+                <ThemedText style={styles.todayMoodEdit}>Edit</ThemedText>
+              </View>
+            ) : (
+              <View style={styles.todayMoodContent}>
+                <ThemedText style={styles.todayMoodEmoji}>➕</ThemedText>
+                <View style={styles.todayMoodTextContainer}>
+                  <ThemedText style={styles.todayMoodLabel}>
+                    Log Today's Mood
+                  </ThemedText>
+                  <ThemedText style={styles.todayMoodSubtext}>
+                    Tap to record how you're feeling
+                  </ThemedText>
+                </View>
+              </View>
+            )}
+          </TouchableOpacity>
+        )}
+
+        {/* Stats - Pro feature */}
+        {isPro ? (
+          <ThemedView style={styles.statsContainer}>
+            <ThemedText type="subtitle" style={styles.statsTitle}>
+              📊 Advanced Statistics
+            </ThemedText>
+
+            <View style={styles.statsGrid}>
+              <ThemedView style={styles.statCard}>
+                <ThemedText style={styles.statEmoji}>
+                  {stats.avgMood > 0
+                    ? getMoodByValue(Math.round(stats.avgMood)).emoji
+                    : "—"}
+                </ThemedText>
+                <ThemedText style={styles.statLabel}>Average Mood</ThemedText>
+                <ThemedText style={styles.statValue}>
+                  {stats.avgMood > 0
+                    ? stats.avgMood.toFixed(1) + "/5"
+                    : "No data"}
+                </ThemedText>
+              </ThemedView>
+
+              <ThemedView style={styles.statCard}>
+                <ThemedText style={styles.statEmoji}>
+                  {stats.mostCommon
+                    ? getMoodOption(stats.mostCommon as any).emoji
+                    : "—"}
+                </ThemedText>
+                <ThemedText style={styles.statLabel}>Most Common</ThemedText>
+                <ThemedText style={styles.statValue}>
+                  {stats.mostCommon
+                    ? getMoodOption(stats.mostCommon as any).label
+                    : "No data"}
+                </ThemedText>
+              </ThemedView>
+
+              <ThemedView style={styles.statCard}>
+                <ThemedText style={styles.statEmoji}>🔥</ThemedText>
+                <ThemedText style={styles.statLabel}>Current Streak</ThemedText>
+                <ThemedText style={styles.statValue}>
+                  {stats.streak} {stats.streak === 1 ? "day" : "days"}
+                </ThemedText>
+              </ThemedView>
+
+              <ThemedView style={styles.statCard}>
+                <ThemedText style={styles.statEmoji}>📊</ThemedText>
+                <ThemedText style={styles.statLabel}>Entries</ThemedText>
+                <ThemedText style={styles.statValue}>
+                  {filteredEntries.length} /{" "}
+                  {timeRange === "month"
+                    ? new Date(
+                        new Date().getFullYear(),
+                        new Date().getMonth() + chartOffset + 1,
+                        0,
+                      ).getDate()
+                    : rangeConfig[timeRange].days}
+                </ThemedText>
+              </ThemedView>
+            </View>
+
+            {/* Mood Distribution */}
+            {advancedStats.moodDistribution.length > 0 && (
+              <View style={styles.analyticsSection}>
+                <ThemedText style={styles.analyticsSectionTitle}>
+                  Mood Distribution
+                </ThemedText>
+                {advancedStats.moodDistribution.map((item) => {
+                  const mood = getMoodOption(item.mood)
+                  return (
+                    <View key={item.mood} style={styles.distributionRow}>
+                      <ThemedText style={styles.distributionEmoji}>
+                        {mood.emoji}
+                      </ThemedText>
+                      <ThemedText style={styles.distributionLabel}>
+                        {mood.label}
+                      </ThemedText>
+                      <View style={styles.distributionBarContainer}>
+                        <View
+                          style={[
+                            styles.distributionBar,
+                            {
+                              width: `${Math.max(item.percentage, 2)}%`,
+                              backgroundColor: mood.color,
+                            },
+                          ]}
+                        />
+                      </View>
+                      <ThemedText style={styles.distributionPercent}>
+                        {Math.round(item.percentage)}%
+                      </ThemedText>
+                    </View>
+                  )
+                })}
+              </View>
+            )}
+
+            {/* Additional Analytics */}
+            <View style={styles.analyticsSection}>
+              <ThemedText style={styles.analyticsSectionTitle}>
+                Deep Insights
+              </ThemedText>
+              <View style={styles.analyticsGrid}>
+                {advancedStats.bestDayOfWeek && (
+                  <ThemedView style={styles.analyticsCard}>
+                    <ThemedText style={styles.analyticsCardEmoji}>
+                      ☀️
+                    </ThemedText>
+                    <ThemedText style={styles.analyticsCardLabel}>
+                      Best Day
+                    </ThemedText>
+                    <ThemedText style={styles.analyticsCardValue}>
+                      {advancedStats.bestDayOfWeek}
+                    </ThemedText>
+                  </ThemedView>
+                )}
+                {advancedStats.worstDayOfWeek && (
+                  <ThemedView style={styles.analyticsCard}>
+                    <ThemedText style={styles.analyticsCardEmoji}>
+                      🌧️
+                    </ThemedText>
+                    <ThemedText style={styles.analyticsCardLabel}>
+                      Hardest Day
+                    </ThemedText>
+                    <ThemedText style={styles.analyticsCardValue}>
+                      {advancedStats.worstDayOfWeek}
+                    </ThemedText>
+                  </ThemedView>
+                )}
+                <ThemedView style={styles.analyticsCard}>
+                  <ThemedText style={styles.analyticsCardEmoji}>🏆</ThemedText>
+                  <ThemedText style={styles.analyticsCardLabel}>
+                    Best Streak
+                  </ThemedText>
+                  <ThemedText style={styles.analyticsCardValue}>
+                    {advancedStats.longestStreak}{" "}
+                    {advancedStats.longestStreak === 1 ? "day" : "days"}
+                  </ThemedText>
+                </ThemedView>
+                <ThemedView style={styles.analyticsCard}>
+                  <ThemedText style={styles.analyticsCardEmoji}>📈</ThemedText>
+                  <ThemedText style={styles.analyticsCardLabel}>
+                    Total Entries
+                  </ThemedText>
+                  <ThemedText style={styles.analyticsCardValue}>
+                    {advancedStats.totalEntries}
+                  </ThemedText>
+                </ThemedView>
+              </View>
+            </View>
+
+            {/* AI Mood Insights */}
+            {insights.length > 0 && (
+              <View style={styles.analyticsSection}>
+                <ThemedText style={styles.analyticsSectionTitle}>
+                  ✨ Mood Insights
+                </ThemedText>
+                {insights.map((insight, index) => (
+                  <View key={index} style={styles.insightCard}>
+                    <ThemedText style={styles.insightEmoji}>
+                      {insight.emoji}
+                    </ThemedText>
+                    <ThemedText style={styles.insightText}>
+                      {insight.text}
+                    </ThemedText>
+                  </View>
+                ))}
+              </View>
+            )}
+          </ThemedView>
+        ) : (
+          <TouchableOpacity
+            style={styles.statsUpgradeContainer}
+            onPress={() => setUpgradeModalVisible(true)}
+          >
+            <ThemedText style={styles.statsUpgradeEmoji}>🔒</ThemedText>
+            <View style={styles.statsUpgradeContent}>
+              <ThemedText style={styles.statsUpgradeTitle}>
+                Advanced Statistics
+              </ThemedText>
+              <ThemedText style={styles.statsUpgradeSubtitle}>
+                Unlock detailed analytics with Pro
+              </ThemedText>
+            </View>
+            <ThemedText style={styles.statsUpgradeArrow}>→</ThemedText>
+          </TouchableOpacity>
+        )}
 
         {/* Recent Entries */}
         {filteredEntries.length > 0 && (
@@ -906,7 +1366,7 @@ export default function TrendsScreen() {
               <ThemedText type="subtitle" style={styles.recentTitle}>
                 Recent Entries
               </ThemedText>
-              {filteredEntries.length > 3 && (
+              {isPro && filteredEntries.length > 3 && (
                 <TouchableOpacity onPress={() => router.push("/entries")}>
                   <ThemedText style={styles.showAllText}>Show all</ThemedText>
                 </TouchableOpacity>
@@ -962,6 +1422,102 @@ export default function TrendsScreen() {
       </ScrollView>
 
       {renderMoodModal()}
+
+      {/* Upgrade to Pro Modal */}
+      <Modal
+        animationType="slide"
+        transparent={true}
+        visible={upgradeModalVisible}
+        onRequestClose={() => setUpgradeModalVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <ThemedView
+            style={[
+              styles.modalContent,
+              styles.upgradeModalContent,
+              { backgroundColor },
+            ]}
+          >
+            <View style={styles.modalHeader}>
+              <ThemedText type="subtitle">Upgrade to Pro</ThemedText>
+              <TouchableOpacity
+                onPress={() => setUpgradeModalVisible(false)}
+                style={styles.closeButton}
+              >
+                <ThemedText style={styles.closeButtonText}>✕</ThemedText>
+              </TouchableOpacity>
+            </View>
+
+            <View style={styles.proHeaderSection}>
+              <ThemedText style={styles.proHeaderEmoji}>⭐</ThemedText>
+              <ThemedText style={styles.proHeaderTitle}>
+                Mood Tracker Pro
+              </ThemedText>
+              <ThemedText style={styles.proHeaderSubtitle}>
+                Take your mood tracking to the next level
+              </ThemedText>
+            </View>
+
+            <ScrollView
+              style={styles.featuresScrollView}
+              showsVerticalScrollIndicator={false}
+            >
+              {PRO_FEATURES.map((feature) => (
+                <View key={feature.id} style={styles.featureItem}>
+                  <ThemedText style={styles.featureEmoji}>
+                    {feature.emoji}
+                  </ThemedText>
+                  <View style={styles.featureTextContainer}>
+                    <ThemedText style={styles.featureTitle}>
+                      {feature.title}
+                    </ThemedText>
+                    <ThemedText style={styles.featureDescription}>
+                      {feature.description}
+                    </ThemedText>
+                  </View>
+                </View>
+              ))}
+            </ScrollView>
+
+            <View style={styles.pricingSection}>
+              <ThemedText style={styles.pricingText}>
+                $0.99 one-time purchase
+              </ThemedText>
+              <ThemedText style={styles.pricingSavings}>
+                Unlock all features forever!
+              </ThemedText>
+            </View>
+
+            <TouchableOpacity
+              style={styles.subscribeButton}
+              onPress={() => {
+                // In a real app, this would trigger the in-app purchase flow
+                setUpgradeModalVisible(false)
+                Alert.alert(
+                  "Coming Soon",
+                  "In-app purchases will be available in a future update!",
+                )
+              }}
+              activeOpacity={0.8}
+            >
+              <ThemedText style={styles.subscribeButtonText}>
+                Upgrade Now
+              </ThemedText>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.restoreButton}
+              onPress={() => {
+                Alert.alert("Restore", "Checking for previous purchases...")
+              }}
+            >
+              <ThemedText style={styles.restoreButtonText}>
+                Restore Purchase
+              </ThemedText>
+            </TouchableOpacity>
+          </ThemedView>
+        </View>
+      </Modal>
 
       {/* Dev-only Add Entry Modal */}
       {__DEV__ && (
@@ -1086,7 +1642,7 @@ export default function TrendsScreen() {
       )}
 
       {/* Dev-only Add Entry Button */}
-      {__DEV__ && (
+      {__DEV__ && isDevView && (
         <TouchableOpacity
           style={styles.devButton}
           onPress={() => setDevModalVisible(true)}
@@ -1129,6 +1685,12 @@ const styles = StyleSheet.create({
   },
   rangeButtonTextActive: {
     color: "white",
+  },
+  rangeButtonDisabled: {
+    opacity: 0.5,
+  },
+  rangeButtonTextDisabled: {
+    opacity: 0.7,
   },
   chartContainer: {
     marginBottom: 24,
@@ -1291,6 +1853,77 @@ const styles = StyleSheet.create({
     color: "#4CAF50",
     fontWeight: "600",
   },
+  // Multi-mood (Pro)
+  todayMoodMultiContainer: {
+    marginBottom: 24,
+    borderRadius: 16,
+    borderWidth: 2,
+    borderColor: "rgba(139, 92, 246, 0.3)",
+    backgroundColor: "rgba(139, 92, 246, 0.05)",
+    padding: 16,
+    overflow: "visible",
+  },
+  todayMoodMultiHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 12,
+  },
+  todayMoodMultiTitle: {
+    fontSize: 16,
+    fontWeight: "700",
+  },
+  todayMoodMultiCount: {
+    fontSize: 13,
+    opacity: 0.6,
+  },
+  todayMoodMultiEntry: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderRadius: 10,
+    backgroundColor: "rgba(150, 150, 150, 0.05)",
+    marginBottom: 8,
+    borderLeftWidth: 4,
+    overflow: "visible",
+  },
+  todayMoodMultiEmoji: {
+    fontSize: 24,
+    lineHeight: 32,
+    marginRight: 10,
+  },
+  todayMoodMultiInfo: {
+    flex: 1,
+  },
+  todayMoodMultiMood: {
+    fontSize: 15,
+    fontWeight: "600",
+  },
+  todayMoodMultiNote: {
+    fontSize: 12,
+    opacity: 0.6,
+    marginTop: 2,
+  },
+  todayMoodMultiTime: {
+    fontSize: 12,
+    opacity: 0.5,
+    fontWeight: "500",
+  },
+  addAnotherMoodButton: {
+    paddingVertical: 10,
+    alignItems: "center",
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: "#8B5CF6",
+    borderStyle: "dashed",
+    marginTop: 4,
+  },
+  addAnotherMoodText: {
+    color: "#8B5CF6",
+    fontWeight: "600",
+    fontSize: 14,
+  },
   // Modal
   modalOverlay: {
     flex: 1,
@@ -1410,6 +2043,138 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: "600",
   },
+  statsUpgradeContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    padding: 16,
+    borderRadius: 16,
+    backgroundColor: "rgba(150, 150, 150, 0.05)",
+    borderWidth: 2,
+    borderColor: "rgba(150, 150, 150, 0.2)",
+    marginBottom: 24,
+  },
+  statsUpgradeEmoji: {
+    fontSize: 24,
+    marginRight: 12,
+  },
+  statsUpgradeContent: {
+    flex: 1,
+  },
+  statsUpgradeTitle: {
+    fontSize: 16,
+    fontWeight: "600",
+    marginBottom: 2,
+  },
+  statsUpgradeSubtitle: {
+    fontSize: 13,
+    opacity: 0.6,
+  },
+  statsUpgradeArrow: {
+    fontSize: 18,
+    opacity: 0.6,
+  },
+  exportButton: {
+    backgroundColor: "#4CAF50",
+    paddingVertical: 12,
+    borderRadius: 8,
+    alignItems: "center",
+    marginTop: 12,
+  },
+  exportButtonText: {
+    color: "white",
+    fontWeight: "600",
+    fontSize: 14,
+  },
+  analyticsSection: {
+    marginTop: 20,
+    paddingTop: 16,
+    borderTopWidth: 1,
+    borderTopColor: "rgba(150, 150, 150, 0.15)",
+  },
+  analyticsSectionTitle: {
+    fontSize: 15,
+    fontWeight: "700",
+    marginBottom: 12,
+  },
+  distributionRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 8,
+  },
+  distributionEmoji: {
+    fontSize: 18,
+    width: 28,
+  },
+  distributionLabel: {
+    fontSize: 13,
+    width: 64,
+    fontWeight: "500",
+  },
+  distributionBarContainer: {
+    flex: 1,
+    height: 12,
+    backgroundColor: "rgba(150, 150, 150, 0.1)",
+    borderRadius: 6,
+    marginHorizontal: 8,
+    overflow: "hidden",
+  },
+  distributionBar: {
+    height: "100%",
+    borderRadius: 6,
+  },
+  distributionPercent: {
+    fontSize: 12,
+    fontWeight: "600",
+    width: 36,
+    textAlign: "right",
+  },
+  analyticsGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 10,
+  },
+  analyticsCard: {
+    flex: 1,
+    minWidth: "45%",
+    padding: 12,
+    borderRadius: 12,
+    backgroundColor: "rgba(150, 150, 150, 0.05)",
+    alignItems: "center",
+    overflow: "visible",
+  },
+  analyticsCardEmoji: {
+    fontSize: 22,
+    lineHeight: 30,
+    marginBottom: 4,
+  },
+  analyticsCardLabel: {
+    fontSize: 11,
+    opacity: 0.6,
+    marginBottom: 2,
+  },
+  analyticsCardValue: {
+    fontSize: 14,
+    fontWeight: "600",
+  },
+  insightCard: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    padding: 12,
+    borderRadius: 12,
+    backgroundColor: "rgba(139, 92, 246, 0.08)",
+    marginBottom: 8,
+  },
+  insightEmoji: {
+    fontSize: 20,
+    marginRight: 10,
+    lineHeight: 28,
+  },
+  insightText: {
+    flex: 1,
+    fontSize: 13,
+    lineHeight: 19,
+    opacity: 0.85,
+  },
   recentContainer: {
     marginBottom: 24,
   },
@@ -1493,5 +2258,147 @@ const styles = StyleSheet.create({
     color: "white",
     fontWeight: "600",
     fontSize: 14,
+  },
+
+  // Upgrade to Pro Button
+  upgradeButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 24,
+    padding: 16,
+    borderRadius: 16,
+    backgroundColor: "#8B5CF6",
+    borderWidth: 2,
+    borderColor: "#7C3AED",
+  },
+  upgradeButtonEmoji: {
+    fontSize: 28,
+    lineHeight: 36,
+    marginRight: 12,
+  },
+  upgradeButtonTextContainer: {
+    flex: 1,
+  },
+  upgradeButtonTitle: {
+    fontSize: 16,
+    fontWeight: "700",
+    color: "#fff",
+  },
+  upgradeButtonSubtitle: {
+    fontSize: 13,
+    color: "#f0f0f0",
+    marginTop: 2,
+  },
+  upgradeButtonArrow: {
+    fontSize: 20,
+    fontWeight: "700",
+    color: "#fff",
+  },
+  // Pro Badge
+  proBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 24,
+    padding: 12,
+    borderRadius: 12,
+    backgroundColor: "rgba(156, 39, 176, 0.15)",
+    borderWidth: 1,
+    borderColor: "#9C27B0",
+  },
+  proBadgeEmoji: {
+    fontSize: 18,
+    marginRight: 8,
+  },
+  proBadgeText: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#9C27B0",
+  },
+  // Upgrade Modal
+  upgradeModalContent: {
+    maxHeight: "85%",
+  },
+  proHeaderSection: {
+    alignItems: "center",
+    marginBottom: 20,
+    paddingTop: 8,
+  },
+  proHeaderEmoji: {
+    fontSize: 48,
+    marginBottom: 12,
+  },
+  proHeaderTitle: {
+    fontSize: 24,
+    fontWeight: "700",
+    marginBottom: 8,
+  },
+  proHeaderSubtitle: {
+    fontSize: 14,
+    opacity: 0.7,
+    textAlign: "center",
+  },
+  featuresScrollView: {
+    maxHeight: 240,
+    marginBottom: 20,
+  },
+  featureItem: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: "rgba(150, 150, 150, 0.15)",
+  },
+  featureEmoji: {
+    fontSize: 24,
+    marginRight: 12,
+    width: 32,
+  },
+  featureTextContainer: {
+    flex: 1,
+  },
+  featureTitle: {
+    fontSize: 15,
+    fontWeight: "600",
+    marginBottom: 4,
+  },
+  featureDescription: {
+    fontSize: 13,
+    opacity: 0.7,
+    lineHeight: 18,
+  },
+  pricingSection: {
+    alignItems: "center",
+    marginBottom: 16,
+  },
+  pricingText: {
+    fontSize: 16,
+    fontWeight: "600",
+  },
+  pricingSavings: {
+    fontSize: 13,
+    color: "#4CAF50",
+    fontWeight: "600",
+    marginTop: 4,
+  },
+  subscribeButton: {
+    backgroundColor: "#9C27B0",
+    paddingVertical: 16,
+    borderRadius: 12,
+    alignItems: "center",
+    marginBottom: 12,
+  },
+  subscribeButtonText: {
+    color: "white",
+    fontSize: 18,
+    fontWeight: "700",
+  },
+  restoreButton: {
+    paddingVertical: 12,
+    alignItems: "center",
+  },
+  restoreButtonText: {
+    fontSize: 14,
+    opacity: 0.7,
   },
 })

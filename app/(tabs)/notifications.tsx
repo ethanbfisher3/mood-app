@@ -14,24 +14,40 @@ import {
 import { ThemedText } from "@/components/themed-text"
 import { ThemedView } from "@/components/themed-view"
 import { useNotificationSettings } from "@/hooks/use-notification-settings"
+import { useProSubscription } from "@/hooks/use-pro-subscription"
 import { useThemeColor } from "@/hooks/use-theme-color"
 import {
   createMoodReminderContent,
   setupNotificationCategories,
 } from "@/services/notification-service"
 
-export default function NotificationsScreen() {
+export default function NotificationsScreen({
+  isDevView,
+}: {
+  isDevView?: boolean
+}) {
   const {
     settings,
+    extraReminders: reminders,
     loading,
     hasPermission,
     toggleNotifications,
     updateTime,
     requestPermissions,
+    addExtraReminder,
+    removeExtraReminder,
+    toggleExtraReminder,
+    updateExtraReminderTime,
     reload,
   } = useNotificationSettings()
 
-  const [showTimePicker, setShowTimePicker] = useState(false)
+  const { isPro } = useProSubscription()
+
+  const [editingReminderId, setEditingReminderId] = useState<string | null>(
+    null,
+  )
+  const [pendingNewTime, setPendingNewTime] = useState<Date>(new Date())
+  const [pendingEditTime, setPendingEditTime] = useState<Date>(new Date())
   const [isSaving, setIsSaving] = useState(false)
 
   const backgroundColor = useThemeColor({}, "background")
@@ -61,13 +77,72 @@ export default function NotificationsScreen() {
   }
 
   const handleTimeChange = async (event: any, selectedDate?: Date) => {
-    setShowTimePicker(Platform.OS === "ios")
-
     if (selectedDate) {
-      setIsSaving(true)
-      await updateTime(selectedDate.getHours(), selectedDate.getMinutes())
-      setIsSaving(false)
+      setPendingEditTime(selectedDate)
     }
+    if (Platform.OS !== "ios" && event.type === "dismissed") {
+      setEditingReminderId(null)
+    }
+  }
+
+  const handleConfirmMainTime = async () => {
+    setIsSaving(true)
+    await updateTime(pendingEditTime.getHours(), pendingEditTime.getMinutes())
+    setIsSaving(false)
+    setEditingReminderId(null)
+  }
+
+  const handleExtraTimeChange = async (event: any, selectedDate?: Date) => {
+    if (selectedDate) {
+      setPendingNewTime(selectedDate)
+    }
+    if (Platform.OS !== "ios" && event.type === "dismissed") {
+      setEditingReminderId(null)
+    }
+  }
+
+  const handleConfirmNewReminder = async () => {
+    setIsSaving(true)
+    await addExtraReminder(
+      pendingNewTime.getHours(),
+      pendingNewTime.getMinutes(),
+    )
+    setIsSaving(false)
+    setEditingReminderId(null)
+    setPendingNewTime(new Date())
+  }
+
+  const handleCancelNewReminder = () => {
+    setEditingReminderId(null)
+    setPendingNewTime(new Date())
+  }
+
+  const handleUpdateExtraTime = async (
+    id: string,
+    event: any,
+    selectedDate?: Date,
+  ) => {
+    if (selectedDate) {
+      setPendingEditTime(selectedDate)
+    }
+    if (Platform.OS !== "ios" && event.type === "dismissed") {
+      setEditingReminderId(null)
+    }
+  }
+
+  const handleConfirmExtraTime = async (id: string) => {
+    setIsSaving(true)
+    await updateExtraReminderTime(
+      id,
+      pendingEditTime.getHours(),
+      pendingEditTime.getMinutes(),
+    )
+    setIsSaving(false)
+    setEditingReminderId(null)
+  }
+
+  const handleCancelEdit = () => {
+    setEditingReminderId(null)
   }
 
   const formatTime = (hour: number, minute: number) => {
@@ -121,59 +196,191 @@ export default function NotificationsScreen() {
           </View>
         </ThemedView>
 
-        {/* Time Picker */}
+        {/* Reminder Times - unified section */}
         <ThemedView
           style={[
             styles.settingCard,
             !settings.enabled && styles.settingCardDisabled,
           ]}
         >
-          <TouchableOpacity
-            style={styles.settingRow}
-            onPress={() =>
-              settings.enabled && setShowTimePicker(!showTimePicker)
-            }
-            disabled={!settings.enabled || isSaving}
-            activeOpacity={0.7}
+          {/* Section Title */}
+          <ThemedText
+            style={[
+              styles.reminderLabel,
+              !settings.enabled && styles.textDisabled,
+              { marginBottom: 8 },
+            ]}
           >
-            <View style={styles.settingInfo}>
-              <ThemedText
-                style={[
-                  styles.settingTitle,
-                  !settings.enabled && styles.textDisabled,
-                ]}
-              >
-                Reminder Time
-              </ThemedText>
-              <ThemedText
-                style={[
-                  styles.settingDescription,
-                  !settings.enabled && styles.textDisabled,
-                ]}
-              >
-                Choose when you want to be reminded
-              </ThemedText>
-            </View>
-            <ThemedText
-              style={[
-                styles.timeDisplay,
-                !settings.enabled && styles.textDisabled,
-              ]}
-            >
-              {formatTime(settings.hour, settings.minute)}
-            </ThemedText>
-          </TouchableOpacity>
-        </ThemedView>
+            Reminder Time(s)
+          </ThemedText>
 
-        {showTimePicker && (
-          <DateTimePicker
-            value={selectedTime}
-            mode="time"
-            is24Hour={false}
-            display={Platform.OS === "ios" ? "spinner" : "default"}
-            onChange={handleTimeChange}
-          />
-        )}
+          {/* Main Reminder Time - in list style */}
+          <View>
+            {editingReminderId === "main" && (
+              <View>
+                <DateTimePicker
+                  value={pendingEditTime}
+                  mode="time"
+                  is24Hour={false}
+                  display={Platform.OS === "ios" ? "spinner" : "default"}
+                  onChange={handleTimeChange}
+                />
+                <View style={styles.confirmCancelRow}>
+                  <TouchableOpacity
+                    style={styles.cancelButton}
+                    onPress={handleCancelEdit}
+                  >
+                    <ThemedText style={styles.cancelButtonText}>
+                      Cancel
+                    </ThemedText>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={styles.confirmButton}
+                    onPress={handleConfirmMainTime}
+                    disabled={isSaving}
+                  >
+                    <ThemedText style={styles.confirmButtonText}>
+                      Confirm
+                    </ThemedText>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            )}
+          </View>
+
+          {/* Extra Reminders */}
+          {(isPro || reminders.length <= 1) &&
+            settings.enabled &&
+            reminders.map((reminder) => (
+              <View key={reminder.id}>
+                <View style={styles.reminderRow}>
+                  <View style={styles.reminderRowLeft}>
+                    <Switch
+                      value={reminder.enabled}
+                      onValueChange={() => {
+                        toggleExtraReminder(reminder.id)
+                      }}
+                      trackColor={{ false: "#767577", true: "#4CAF50" }}
+                      thumbColor="#fff"
+                    />
+                    <TouchableOpacity
+                      onPress={() => {
+                        if (editingReminderId === reminder.id) {
+                          setEditingReminderId(null)
+                        } else {
+                          const d = new Date()
+                          d.setHours(reminder.hour, reminder.minute, 0, 0)
+                          setPendingEditTime(d)
+                          setEditingReminderId(reminder.id)
+                        }
+                      }}
+                      activeOpacity={0.7}
+                    >
+                      <ThemedText
+                        style={[
+                          styles.timeDisplay,
+                          { marginLeft: 12 },
+                          !reminder.enabled && styles.textDisabled,
+                        ]}
+                      >
+                        {formatTime(reminder.hour, reminder.minute)}
+                      </ThemedText>
+                    </TouchableOpacity>
+                  </View>
+                  <TouchableOpacity
+                    onPress={() => removeExtraReminder(reminder.id)}
+                    style={styles.removeReminderButton}
+                  >
+                    <ThemedText style={styles.removeReminderText}>✕</ThemedText>
+                  </TouchableOpacity>
+                </View>
+
+                {editingReminderId === reminder.id && (
+                  <View>
+                    <DateTimePicker
+                      value={pendingEditTime}
+                      mode="time"
+                      is24Hour={false}
+                      display={Platform.OS === "ios" ? "spinner" : "default"}
+                      onChange={(event, date) =>
+                        handleUpdateExtraTime(reminder.id, event, date)
+                      }
+                    />
+                    <View style={styles.confirmCancelRow}>
+                      <TouchableOpacity
+                        style={styles.cancelButton}
+                        onPress={handleCancelEdit}
+                      >
+                        <ThemedText style={styles.cancelButtonText}>
+                          Cancel
+                        </ThemedText>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={styles.confirmButton}
+                        onPress={() => handleConfirmExtraTime(reminder.id)}
+                        disabled={isSaving}
+                      >
+                        <ThemedText style={styles.confirmButtonText}>
+                          Confirm
+                        </ThemedText>
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                )}
+              </View>
+            ))}
+
+          {/* Add Reminder Button */}
+          {(isPro || reminders.length == 0) &&
+            settings.enabled &&
+            reminders.length < 3 &&
+            editingReminderId !== "new" && (
+              <TouchableOpacity
+                style={styles.addReminderButton}
+                onPress={() =>
+                  setEditingReminderId((prev) =>
+                    prev === "new" ? null : "new",
+                  )
+                }
+                disabled={isSaving}
+              >
+                <ThemedText style={styles.addReminderText}>
+                  + Add Reminder
+                </ThemedText>
+              </TouchableOpacity>
+            )}
+
+          {editingReminderId === "new" && (
+            <View>
+              <DateTimePicker
+                value={pendingNewTime}
+                mode="time"
+                is24Hour={false}
+                display={Platform.OS === "ios" ? "spinner" : "default"}
+                onChange={handleExtraTimeChange}
+              />
+              <View style={styles.confirmCancelRow}>
+                <TouchableOpacity
+                  style={styles.cancelButton}
+                  onPress={handleCancelNewReminder}
+                >
+                  <ThemedText style={styles.cancelButtonText}>
+                    Cancel
+                  </ThemedText>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.confirmButton}
+                  onPress={handleConfirmNewReminder}
+                  disabled={isSaving}
+                >
+                  <ThemedText style={styles.confirmButtonText}>
+                    Confirm
+                  </ThemedText>
+                </TouchableOpacity>
+              </View>
+            </View>
+          )}
+        </ThemedView>
 
         {/* Info Section */}
         <ThemedView style={styles.infoSection}>
@@ -254,7 +461,7 @@ export default function NotificationsScreen() {
             </TouchableOpacity>
           )}
 
-          {__DEV__ && (
+          {__DEV__ && isDevView && (
             <TouchableOpacity
               style={[styles.permissionButton, styles.testButton]}
               onPress={async () => {
@@ -361,6 +568,23 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     color: "#4CAF50",
   },
+  reminderRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: "rgba(150, 150, 150, 0.1)",
+  },
+  reminderRowLeft: {
+    flexDirection: "row",
+    alignItems: "center",
+    flex: 1,
+  },
+  reminderLabel: {
+    fontSize: 16,
+    fontWeight: "600",
+  },
   infoSection: {
     marginTop: 24,
     marginBottom: 24,
@@ -430,5 +654,55 @@ const styles = StyleSheet.create({
     opacity: 0.8,
     marginBottom: 8,
     lineHeight: 20,
+  },
+  removeReminderButton: {
+    padding: 8,
+  },
+  removeReminderText: {
+    fontSize: 16,
+    opacity: 0.5,
+  },
+  addReminderButton: {
+    paddingVertical: 12,
+    alignItems: "center",
+    marginTop: 8,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "#4CAF50",
+    borderStyle: "dashed",
+  },
+  addReminderText: {
+    color: "#4CAF50",
+    fontWeight: "600",
+    fontSize: 14,
+  },
+  confirmCancelRow: {
+    flexDirection: "row",
+    justifyContent: "center",
+    gap: 12,
+    marginTop: 8,
+    marginBottom: 4,
+  },
+  confirmButton: {
+    backgroundColor: "#4CAF50",
+    paddingVertical: 10,
+    paddingHorizontal: 24,
+    borderRadius: 8,
+  },
+  confirmButtonText: {
+    color: "white",
+    fontWeight: "600",
+    fontSize: 14,
+  },
+  cancelButton: {
+    backgroundColor: "rgba(150, 150, 150, 0.15)",
+    paddingVertical: 10,
+    paddingHorizontal: 24,
+    borderRadius: 8,
+  },
+  cancelButtonText: {
+    fontWeight: "600",
+    fontSize: 14,
+    opacity: 0.7,
   },
 })

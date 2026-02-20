@@ -7,11 +7,19 @@ import * as Notifications from "expo-notifications"
 import { useCallback, useEffect, useState } from "react"
 
 const NOTIFICATION_SETTINGS_KEY = "@notification_settings"
+const EXTRA_REMINDERS_KEY = "@extra_reminder_settings"
 
 export interface NotificationSettings {
   enabled: boolean
   hour: number
   minute: number
+}
+
+export interface ExtraReminder {
+  id: string
+  hour: number
+  minute: number
+  enabled: boolean
 }
 
 const DEFAULT_SETTINGS: NotificationSettings = {
@@ -23,6 +31,7 @@ const DEFAULT_SETTINGS: NotificationSettings = {
 export function useNotificationSettings() {
   const [settings, setSettings] =
     useState<NotificationSettings>(DEFAULT_SETTINGS)
+  const [extraReminders, setExtraReminders] = useState<ExtraReminder[]>([])
   const [loading, setLoading] = useState(true)
   const [hasPermission, setHasPermission] = useState(false)
 
@@ -32,6 +41,10 @@ export function useNotificationSettings() {
       const stored = await AsyncStorage.getItem(NOTIFICATION_SETTINGS_KEY)
       if (stored) {
         setSettings(JSON.parse(stored))
+      }
+      const extraStored = await AsyncStorage.getItem(EXTRA_REMINDERS_KEY)
+      if (extraStored) {
+        setExtraReminders(JSON.parse(extraStored))
       }
     } catch (error) {
       console.error("Error loading notification settings:", error)
@@ -70,7 +83,7 @@ export function useNotificationSettings() {
       // Ensure categories are set up
       await setupNotificationCategories()
 
-      // Schedule new notification with mood category for expandable actions
+      // Schedule main notification
       await Notifications.scheduleNotificationAsync({
         content: createMoodReminderContent(),
         trigger: {
@@ -79,6 +92,24 @@ export function useNotificationSettings() {
           minute,
         },
       })
+
+      // Schedule extra reminders
+      const storedExtras = await AsyncStorage.getItem(EXTRA_REMINDERS_KEY)
+      if (storedExtras) {
+        const extras: ExtraReminder[] = JSON.parse(storedExtras)
+        for (const extra of extras) {
+          if (extra.enabled) {
+            await Notifications.scheduleNotificationAsync({
+              content: createMoodReminderContent(),
+              trigger: {
+                type: Notifications.SchedulableTriggerInputTypes.DAILY,
+                hour: extra.hour,
+                minute: extra.minute,
+              },
+            })
+          }
+        }
+      }
     },
     [],
   )
@@ -127,14 +158,105 @@ export function useNotificationSettings() {
     [settings, saveSettings],
   )
 
+  // Add an extra reminder (Pro feature)
+  const addExtraReminder = useCallback(
+    async (hour: number, minute: number) => {
+      const newReminder: ExtraReminder = {
+        id: `extra-${Date.now()}`,
+        hour,
+        minute,
+        enabled: true,
+      }
+      const updated = [...extraReminders, newReminder]
+      try {
+        await AsyncStorage.setItem(EXTRA_REMINDERS_KEY, JSON.stringify(updated))
+        setExtraReminders(updated)
+        if (settings.enabled) {
+          await scheduleNotification(settings.hour, settings.minute)
+        }
+        return true
+      } catch (error) {
+        console.error("Error adding extra reminder:", error)
+        return false
+      }
+    },
+    [extraReminders, settings, scheduleNotification],
+  )
+
+  // Remove an extra reminder
+  const removeExtraReminder = useCallback(
+    async (id: string) => {
+      const updated = extraReminders.filter((r) => r.id !== id)
+      try {
+        await AsyncStorage.setItem(EXTRA_REMINDERS_KEY, JSON.stringify(updated))
+        setExtraReminders(updated)
+        if (settings.enabled) {
+          await scheduleNotification(settings.hour, settings.minute)
+        }
+        return true
+      } catch (error) {
+        console.error("Error removing extra reminder:", error)
+        return false
+      }
+    },
+    [extraReminders, settings, scheduleNotification],
+  )
+
+  // Toggle an extra reminder
+  const toggleExtraReminder = useCallback(
+    async (id: string) => {
+      const updated = extraReminders.map((r) =>
+        r.id === id ? { ...r, enabled: !r.enabled } : r,
+      )
+      try {
+        await AsyncStorage.setItem(EXTRA_REMINDERS_KEY, JSON.stringify(updated))
+        setExtraReminders(updated)
+        if (settings.enabled) {
+          await scheduleNotification(settings.hour, settings.minute)
+        }
+        return true
+      } catch (error) {
+        console.error("Error toggling extra reminder:", error)
+        return false
+      }
+    },
+    [extraReminders, settings, scheduleNotification],
+  )
+
+  // Update an extra reminder's time
+  const updateExtraReminderTime = useCallback(
+    async (id: string, hour: number, minute: number) => {
+      const updated = extraReminders.map((r) =>
+        r.id === id ? { ...r, hour, minute } : r,
+      )
+      try {
+        await AsyncStorage.setItem(EXTRA_REMINDERS_KEY, JSON.stringify(updated))
+        setExtraReminders(updated)
+        if (settings.enabled) {
+          await scheduleNotification(settings.hour, settings.minute)
+        }
+        return true
+      } catch (error) {
+        console.error("Error updating extra reminder time:", error)
+        return false
+      }
+    },
+    [extraReminders, settings, scheduleNotification],
+  )
+
   return {
     settings,
+    extraReminders,
     loading,
     hasPermission,
     saveSettings,
     toggleNotifications,
     updateTime,
     requestPermissions,
+    addExtraReminder,
+    removeExtraReminder,
+    toggleExtraReminder,
+    updateExtraReminderTime,
     reload: loadSettings,
   }
 }

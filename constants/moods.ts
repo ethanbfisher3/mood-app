@@ -4,6 +4,7 @@ export interface MoodEntry {
   id: string
   mood: MoodType
   date: string // ISO date string
+  time?: string // HH:MM format, for multi-mood tracking
   note?: string
 }
 
