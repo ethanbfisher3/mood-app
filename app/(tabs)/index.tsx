@@ -1,3 +1,4 @@
+import Ionicons from "@expo/vector-icons/Ionicons"
 import { useRouter } from "expo-router"
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import {
@@ -14,6 +15,7 @@ import {
   View,
 } from "react-native"
 import { Calendar } from "react-native-calendars"
+import { Swipeable } from "react-native-gesture-handler"
 import { useSharedValue } from "react-native-reanimated"
 import Svg, { Circle, Line, Rect } from "react-native-svg"
 
@@ -44,6 +46,8 @@ export default function TrendsScreen({ isDevView }: { isDevView?: boolean }) {
     reload,
     saveMood,
     saveMoodForDate,
+    deleteMood,
+    updateMood,
     getTodaysMood,
     getTodaysMoods,
   } = useMoodStorage()
@@ -58,6 +62,7 @@ export default function TrendsScreen({ isDevView }: { isDevView?: boolean }) {
   const [devModalVisible, setDevModalVisible] = useState(false)
   const [devSelectedMood, setDevSelectedMood] = useState<MoodType | null>(null)
   const [devDate, setDevDate] = useState("")
+  const [editingEntryId, setEditingEntryId] = useState<string | null>(null)
   const [upgradeModalVisible, setUpgradeModalVisible] = useState(false)
   const baseZoom = useSharedValue(1)
   const pinchScale = useSharedValue(1)
@@ -96,6 +101,7 @@ export default function TrendsScreen({ isDevView }: { isDevView?: boolean }) {
 
   // Load today's mood when modal opens
   const openMoodModal = useCallback(() => {
+    setEditingEntryId(null)
     if (isPro) {
       // Pro users always start fresh to add another mood
       setSelectedMood(null)
@@ -113,6 +119,14 @@ export default function TrendsScreen({ isDevView }: { isDevView?: boolean }) {
     setModalVisible(true)
   }, [getTodaysMood, isPro])
 
+  // Open modal to edit a specific entry
+  const openEditMoodModal = useCallback((entry: MoodEntry) => {
+    setEditingEntryId(entry.id)
+    setSelectedMood(entry.mood)
+    setNote(entry.note || "")
+    setModalVisible(true)
+  }, [])
+
   const handleSaveMood = async () => {
     if (!selectedMood) {
       Alert.alert("Select a Mood", "Please select how you're feeling today.")
@@ -120,16 +134,32 @@ export default function TrendsScreen({ isDevView }: { isDevView?: boolean }) {
     }
 
     setIsSaving(true)
-    const success = await saveMood(
-      selectedMood,
-      note.trim() || undefined,
-      isPro, // append multiple for Pro users
-    )
+    let success: boolean
+    if (editingEntryId) {
+      // Update existing entry
+      success = await updateMood(
+        editingEntryId,
+        selectedMood,
+        note.trim() || undefined,
+      )
+    } else {
+      success = await saveMood(
+        selectedMood,
+        note.trim() || undefined,
+        isPro, // append multiple for Pro users
+      )
+    }
     setIsSaving(false)
 
     if (success) {
       setModalVisible(false)
-      Alert.alert("Saved!", "Your mood has been logged. 🎉")
+      setEditingEntryId(null)
+      Alert.alert(
+        "Saved!",
+        editingEntryId
+          ? "Your mood has been updated. 🎉"
+          : "Your mood has been logged. 🎉",
+      )
     } else {
       Alert.alert("Error", "Failed to save your mood. Please try again.")
     }
@@ -1089,34 +1119,62 @@ export default function TrendsScreen({ isDevView }: { isDevView?: boolean }) {
             </View>
             {todaysMoods.map((entry) => {
               const mood = getMoodOption(entry.mood)
-              return (
-                <View
-                  key={entry.id}
-                  style={[
-                    styles.todayMoodMultiEntry,
-                    { borderLeftColor: mood.color },
-                  ]}
+              const renderRightActions = () => (
+                <TouchableOpacity
+                  style={styles.deleteSwipeAction}
+                  onPress={() => {
+                    Alert.alert(
+                      "Delete Mood",
+                      "Are you sure you want to delete this mood entry?",
+                      [
+                        { text: "Cancel", style: "cancel" },
+                        {
+                          text: "Delete",
+                          style: "destructive",
+                          onPress: () => deleteMood(entry.id),
+                        },
+                      ],
+                    )
+                  }}
                 >
-                  <ThemedText style={styles.todayMoodMultiEmoji}>
-                    {mood.emoji}
-                  </ThemedText>
-                  <View style={styles.todayMoodMultiInfo}>
-                    <ThemedText style={styles.todayMoodMultiMood}>
-                      {mood.label}
+                  <Ionicons name="trash-outline" size={24} color="white" />
+                </TouchableOpacity>
+              )
+              return (
+                <Swipeable
+                  key={entry.id}
+                  renderRightActions={renderRightActions}
+                  overshootRight={false}
+                >
+                  <TouchableOpacity
+                    activeOpacity={0.7}
+                    onPress={() => openEditMoodModal(entry)}
+                    style={[
+                      styles.todayMoodMultiEntry,
+                      { borderLeftColor: mood.color },
+                    ]}
+                  >
+                    <ThemedText style={styles.todayMoodMultiEmoji}>
+                      {mood.emoji}
                     </ThemedText>
-                    {entry.note && (
-                      <ThemedText
-                        style={styles.todayMoodMultiNote}
-                        numberOfLines={1}
-                      >
-                        {entry.note}
+                    <View style={styles.todayMoodMultiInfo}>
+                      <ThemedText style={styles.todayMoodMultiMood}>
+                        {mood.label}
                       </ThemedText>
-                    )}
-                  </View>
-                  <ThemedText style={styles.todayMoodMultiTime}>
-                    {entry.time || ""}
-                  </ThemedText>
-                </View>
+                      {entry.note && (
+                        <ThemedText
+                          style={styles.todayMoodMultiNote}
+                          numberOfLines={1}
+                        >
+                          {entry.note}
+                        </ThemedText>
+                      )}
+                    </View>
+                    <ThemedText style={styles.todayMoodMultiTime}>
+                      {entry.time || ""}
+                    </ThemedText>
+                  </TouchableOpacity>
+                </Swipeable>
               )
             })}
             <TouchableOpacity
@@ -1360,19 +1418,22 @@ export default function TrendsScreen({ isDevView }: { isDevView?: boolean }) {
         )}
 
         {/* Recent Entries */}
-        {filteredEntries.length > 0 && (
+        {entries.length > 0 && (
           <ThemedView style={styles.recentContainer}>
             <View style={styles.recentHeader}>
               <ThemedText type="subtitle" style={styles.recentTitle}>
                 Recent Entries
               </ThemedText>
-              {isPro && filteredEntries.length > 3 && (
+              <ThemedText style={styles.recentCount}>
+                Total Entries: {entries.length}
+              </ThemedText>
+              {isPro && entries.length > 3 && (
                 <TouchableOpacity onPress={() => router.push("/entries")}>
                   <ThemedText style={styles.showAllText}>Show all</ThemedText>
                 </TouchableOpacity>
               )}
             </View>
-            {[...filteredEntries]
+            {[...entries]
               .sort(
                 (a, b) =>
                   new Date(b.date).getTime() - new Date(a.date).getTime(),
@@ -1380,8 +1441,8 @@ export default function TrendsScreen({ isDevView }: { isDevView?: boolean }) {
               .slice(0, 3)
               .map((entry) => {
                 const mood = getMoodOption(entry.mood)
-                return (
-                  <ThemedView key={entry.id} style={styles.entryCard}>
+                const cardContent = (
+                  <>
                     <ThemedText style={styles.entryEmoji}>
                       {mood.emoji}
                     </ThemedText>
@@ -1402,15 +1463,55 @@ export default function TrendsScreen({ isDevView }: { isDevView?: boolean }) {
                         </ThemedText>
                       )}
                     </View>
+                  </>
+                )
+                const renderDeleteAction = () => (
+                  <TouchableOpacity
+                    style={styles.deleteSwipeAction}
+                    onPress={() => {
+                      Alert.alert(
+                        "Delete Entry",
+                        "Are you sure you want to delete this mood entry?",
+                        [
+                          { text: "Cancel", style: "cancel" },
+                          {
+                            text: "Delete",
+                            style: "destructive",
+                            onPress: () => deleteMood(entry.id),
+                          },
+                        ],
+                      )
+                    }}
+                  >
+                    <Ionicons name="trash-outline" size={24} color="white" />
+                  </TouchableOpacity>
+                )
+                return isDevView ? (
+                  <Swipeable
+                    key={entry.id}
+                    renderRightActions={renderDeleteAction}
+                    overshootRight={false}
+                  >
+                    <TouchableOpacity
+                      activeOpacity={0.7}
+                      onPress={() => openEditMoodModal(entry)}
+                    >
+                      <ThemedView style={styles.entryCard}>
+                        {cardContent}
+                      </ThemedView>
+                    </TouchableOpacity>
+                  </Swipeable>
+                ) : (
+                  <ThemedView key={entry.id} style={styles.entryCard}>
+                    {cardContent}
                   </ThemedView>
                 )
               })}
           </ThemedView>
         )}
 
-        {filteredEntries.length === 0 && (
+        {entries.length === 0 && (
           <ThemedView style={styles.emptyState}>
-            <ThemedText style={styles.emptyEmoji}>📝</ThemedText>
             <ThemedText style={styles.emptyText}>
               No mood entries yet for this period.
             </ThemedText>
@@ -1910,6 +2011,15 @@ const styles = StyleSheet.create({
     opacity: 0.5,
     fontWeight: "500",
   },
+  deleteSwipeAction: {
+    backgroundColor: "#F44336",
+    justifyContent: "center",
+    alignItems: "center",
+    width: 60,
+    borderRadius: 10,
+    marginBottom: 8,
+    marginLeft: 8,
+  },
   addAnotherMoodButton: {
     paddingVertical: 10,
     alignItems: "center",
@@ -2177,6 +2287,10 @@ const styles = StyleSheet.create({
   },
   recentContainer: {
     marginBottom: 24,
+  },
+  recentCount: {
+    fontSize: 13,
+    opacity: 0.6,
   },
   recentHeader: {
     flexDirection: "row",
