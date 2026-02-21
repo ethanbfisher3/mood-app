@@ -63,7 +63,6 @@ export default function EntriesScreen() {
           </ThemedView>
         ) : (
           <ThemedView style={styles.emptyState}>
-            <ThemedText style={styles.emptyEmoji}>📝</ThemedText>
             <ThemedText style={styles.emptyText}>
               No mood entries yet.
             </ThemedText>

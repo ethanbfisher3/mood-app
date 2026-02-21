@@ -114,6 +114,46 @@ export function useMoodStorage() {
       })
   }, [entries])
 
+  // Delete a mood entry by ID
+  const deleteMood = useCallback(
+    async (id: string) => {
+      const updatedEntries = entries.filter((e) => e.id !== id)
+      try {
+        await AsyncStorage.setItem(
+          MOOD_STORAGE_KEY,
+          JSON.stringify(updatedEntries),
+        )
+        setEntries(updatedEntries)
+        return true
+      } catch (error) {
+        console.error("Error deleting mood:", error)
+        return false
+      }
+    },
+    [entries],
+  )
+
+  // Update an existing mood entry by ID
+  const updateMood = useCallback(
+    async (id: string, mood: MoodType, note?: string) => {
+      const updatedEntries = entries.map((e) =>
+        e.id === id ? { ...e, mood, note } : e,
+      )
+      try {
+        await AsyncStorage.setItem(
+          MOOD_STORAGE_KEY,
+          JSON.stringify(updatedEntries),
+        )
+        setEntries(updatedEntries)
+        return true
+      } catch (error) {
+        console.error("Error updating mood:", error)
+        return false
+      }
+    },
+    [entries],
+  )
+
   // Get entries for a date range
   const getEntriesInRange = useCallback(
     (startDate: Date, endDate: Date) => {
@@ -135,15 +175,30 @@ export function useMoodStorage() {
     [getEntriesInRange],
   )
 
+  // Delete all mood entries
+  const deleteAllMoods = useCallback(async () => {
+    try {
+      await AsyncStorage.removeItem(MOOD_STORAGE_KEY)
+      setEntries([])
+      return true
+    } catch (error) {
+      console.error("Error deleting all moods:", error)
+      return false
+    }
+  }, [])
+
   return {
     entries,
     loading,
     saveMood,
     saveMoodForDate,
+    deleteMood,
+    updateMood,
     getTodaysMood,
     getTodaysMoods,
     getEntriesInRange,
     getEntriesForPastDays,
+    deleteAllMoods,
     reload: loadEntries,
   }
 }
