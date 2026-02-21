@@ -1,9 +1,11 @@
 Free:
-
+One mood per day
+One notification per day
 
 Paid:
 Multiple moods per day
 Advanced statistics
+Extra notification times
 Mood Distribution
 Deep Insights
 Mood Insights
@@ -11,10 +13,11 @@ Mood Insights
 
 
 
-DEV:
+DEV only:
 Entries can be tapped on deleted (by swiping to the left) from under the 'Recent Entries' section
 'Delete All' button on recent entries list
 
 
 PROD:
 Entries cannot be edited in the 'Recent Entries' Section
+Entries cannot be swiped on and deleted in the 'Recent Entries' Section

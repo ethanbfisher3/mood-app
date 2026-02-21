@@ -175,6 +175,18 @@ export function useMoodStorage() {
     [getEntriesInRange],
   )
 
+  // Delete all mood entries
+  const deleteAllMoods = useCallback(async () => {
+    try {
+      await AsyncStorage.removeItem(MOOD_STORAGE_KEY)
+      setEntries([])
+      return true
+    } catch (error) {
+      console.error("Error deleting all moods:", error)
+      return false
+    }
+  }, [])
+
   return {
     entries,
     loading,
@@ -186,6 +198,7 @@ export function useMoodStorage() {
     getTodaysMoods,
     getEntriesInRange,
     getEntriesForPastDays,
+    deleteAllMoods,
     reload: loadEntries,
   }
 }

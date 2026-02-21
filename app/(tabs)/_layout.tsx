@@ -60,7 +60,7 @@ export default function TabLayout() {
       </PagerView>
 
       {/* Dev-only Pro Toggle Button */}
-      {__DEV__ && isDevView && (
+      {__DEV__ && (
         <TouchableOpacity
           style={[styles.devViewToggleButton, styles.devProToggleButton]}
           onPress={async () => {

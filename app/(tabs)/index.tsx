@@ -1,4 +1,5 @@
 import Ionicons from "@expo/vector-icons/Ionicons"
+import { useFocusEffect } from "@react-navigation/native"
 import { useRouter } from "expo-router"
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import {
@@ -42,7 +43,6 @@ export default function TrendsScreen({ isDevView }: { isDevView?: boolean }) {
   const router = useRouter()
   const {
     entries,
-    getEntriesForPastDays,
     reload,
     saveMood,
     saveMoodForDate,
@@ -51,7 +51,7 @@ export default function TrendsScreen({ isDevView }: { isDevView?: boolean }) {
     getTodaysMood,
     getTodaysMoods,
   } = useMoodStorage()
-  const [timeRange, setTimeRange] = useState<TimeRange>("week")
+  const [timeRange, setTimeRange] = useState<TimeRange>("month")
   const [modalVisible, setModalVisible] = useState(false)
   const [selectedMood, setSelectedMood] = useState<MoodType | null>(null)
   const [note, setNote] = useState("")
@@ -98,6 +98,13 @@ export default function TrendsScreen({ isDevView }: { isDevView?: boolean }) {
   useEffect(() => {
     reload()
   }, [reload])
+
+  // Reload data when screen gains focus (e.g., returning from entries page)
+  useFocusEffect(
+    useCallback(() => {
+      reload()
+    }, [reload]),
+  )
 
   // Load today's mood when modal opens
   const openMoodModal = useCallback(() => {
@@ -1428,7 +1435,9 @@ export default function TrendsScreen({ isDevView }: { isDevView?: boolean }) {
                 Total Entries: {entries.length}
               </ThemedText>
               {isPro && entries.length > 3 && (
-                <TouchableOpacity onPress={() => router.push("/entries")}>
+                <TouchableOpacity
+                  onPress={() => router.push({ pathname: "/entries" })}
+                >
                   <ThemedText style={styles.showAllText}>Show all</ThemedText>
                 </TouchableOpacity>
               )}
