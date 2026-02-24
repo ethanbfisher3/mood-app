@@ -1,6 +1,7 @@
 Free:
-One mood per day
+One entry per day, multiple moods can be added
 One notification per day
+
 
 Paid:
 Multiple moods per day

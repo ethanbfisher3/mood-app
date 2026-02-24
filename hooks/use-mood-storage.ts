@@ -28,13 +28,19 @@ export function useMoodStorage() {
 
   // Save a new mood entry (replaces existing for free, appends for Pro)
   const saveMood = useCallback(
-    async (mood: MoodType, note?: string, appendMultiple?: boolean) => {
+    async (
+      moods: MoodType[] /* one or more moods */,
+      note?: string,
+      appendMultiple?: boolean,
+    ) => {
       const today = new Date().toISOString().split("T")[0]
       const now = new Date()
       const time = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`
       const newEntry: MoodEntry = {
         id: `${today}-${Date.now()}`,
-        mood,
+        // keep legacy single mood for compatibility
+        mood: moods[0],
+        moods,
         date: today,
         time,
         note,
@@ -67,10 +73,11 @@ export function useMoodStorage() {
 
   // Save a mood entry for a specific date (for testing)
   const saveMoodForDate = useCallback(
-    async (mood: MoodType, date: string, note?: string) => {
+    async (moods: MoodType[], date: string, note?: string) => {
       const newEntry: MoodEntry = {
         id: `${date}-${Date.now()}`,
-        mood,
+        mood: moods[0],
+        moods,
         date,
         note,
       }
@@ -135,9 +142,9 @@ export function useMoodStorage() {
 
   // Update an existing mood entry by ID
   const updateMood = useCallback(
-    async (id: string, mood: MoodType, note?: string) => {
+    async (id: string, moods: MoodType[], note?: string) => {
       const updatedEntries = entries.map((e) =>
-        e.id === id ? { ...e, mood, note } : e,
+        e.id === id ? { ...e, mood: moods[0], moods, note } : e,
       )
       try {
         await AsyncStorage.setItem(
