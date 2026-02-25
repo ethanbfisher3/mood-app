@@ -1,7 +1,3 @@
-Multiple mood options
-
-When adding a note to the mood, move the screen up so they can see what theyre typing
 On android, when adding a time with the calendar, don't use the cancel and add buttons because android has its own thing
-Remove 'Status' box on the notifications page
-You shouldn't be able to delete entries under 'recent entries' on dev
 Fix sizes and styles in case a user is on an ipad
+Remove emojis that are hardcoded in the .tsx files and put images instead

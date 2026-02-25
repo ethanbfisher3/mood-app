@@ -385,83 +385,73 @@ export default function NotificationsScreen({
         {/* Info Section */}
         <ThemedView style={styles.infoSection}>
           <ThemedText type="subtitle" style={styles.infoTitle}>
-            How it works
+            Your Mood, On Time
           </ThemedText>
 
           <View style={styles.infoItem}>
-            <ThemedText style={styles.infoEmoji}>🔔</ThemedText>
             <ThemedText style={styles.infoText}>
-              You'll receive a notification at your chosen time each day
+              • You'll receive a notification at your chosen time each day
             </ThemedText>
           </View>
 
           <View style={styles.infoItem}>
-            <ThemedText style={styles.infoEmoji}>⬇️</ThemedText>
             <ThemedText style={styles.infoText}>
-              Expand the notification to quickly log your mood without opening
-              the app
+              • Expand the notification to quickly log your mood or tap the
+              notification to open the app and add notes
             </ThemedText>
           </View>
 
           <View style={styles.infoItem}>
-            <ThemedText style={styles.infoEmoji}>📝</ThemedText>
             <ThemedText style={styles.infoText}>
-              Or tap the notification to open the app and add notes
-            </ThemedText>
-          </View>
-
-          <View style={styles.infoItem}>
-            <ThemedText style={styles.infoEmoji}>📊</ThemedText>
-            <ThemedText style={styles.infoText}>
-              Consistent tracking helps you understand your emotional patterns
+              • Consistent tracking helps you understand your mood patterns
             </ThemedText>
           </View>
         </ThemedView>
 
         {/* Permission Status */}
-        <ThemedView style={styles.statusSection}>
-          <ThemedText type="subtitle" style={styles.statusTitle}>
-            Status
-          </ThemedText>
-
-          <View style={styles.statusRow}>
-            <ThemedText style={styles.statusLabel}>
-              Notifications Permission
+        {__DEV__ && isDevView && (
+          <ThemedView style={styles.statusSection}>
+            <ThemedText type="subtitle" style={styles.statusTitle}>
+              Status
             </ThemedText>
-            <ThemedText
-              style={[
-                styles.statusValue,
-                { color: hasPermission ? "#4CAF50" : "#FF9800" },
-              ]}
-            >
-              {hasPermission ? "✓ Granted" : "⚠ Not Granted"}
-            </ThemedText>
-          </View>
 
-          <View style={styles.statusRow}>
-            <ThemedText style={styles.statusLabel}>Daily Reminder</ThemedText>
-            <ThemedText
-              style={[
-                styles.statusValue,
-                { color: settings.enabled ? "#4CAF50" : "#687076" },
-              ]}
-            >
-              {settings.enabled ? "✓ Active" : "○ Inactive"}
-            </ThemedText>
-          </View>
-
-          {!hasPermission && (
-            <TouchableOpacity
-              style={styles.permissionButton}
-              onPress={requestPermissions}
-            >
-              <ThemedText style={styles.permissionButtonText}>
-                Grant Permission
+            <View style={styles.statusRow}>
+              <ThemedText style={styles.statusLabel}>
+                Notifications Permission
               </ThemedText>
-            </TouchableOpacity>
-          )}
+              <ThemedText
+                style={[
+                  styles.statusValue,
+                  { color: hasPermission ? "#4CAF50" : "#FF9800" },
+                ]}
+              >
+                {hasPermission ? "✓ Granted" : "⚠ Not Granted"}
+              </ThemedText>
+            </View>
 
-          {__DEV__ && isDevView && (
+            <View style={styles.statusRow}>
+              <ThemedText style={styles.statusLabel}>Daily Reminder</ThemedText>
+              <ThemedText
+                style={[
+                  styles.statusValue,
+                  { color: settings.enabled ? "#4CAF50" : "#687076" },
+                ]}
+              >
+                {settings.enabled ? "✓ Active" : "○ Inactive"}
+              </ThemedText>
+            </View>
+
+            {!hasPermission && (
+              <TouchableOpacity
+                style={styles.permissionButton}
+                onPress={requestPermissions}
+              >
+                <ThemedText style={styles.permissionButtonText}>
+                  Grant Permission
+                </ThemedText>
+              </TouchableOpacity>
+            )}
+
             <TouchableOpacity
               style={[styles.permissionButton, styles.testButton]}
               onPress={async () => {
@@ -483,16 +473,16 @@ export default function NotificationsScreen({
               }}
             >
               <ThemedText style={styles.permissionButtonText}>
-                🧪 Test Expandable Notification
+                Test Expandable Notification
               </ThemedText>
             </TouchableOpacity>
-          )}
-        </ThemedView>
+          </ThemedView>
+        )}
 
         {/* Tips */}
         <ThemedView style={styles.tipsSection}>
           <ThemedText type="subtitle" style={styles.tipsTitle}>
-            💡 Tips
+            Tips
           </ThemedText>
           <ThemedText style={styles.tipText}>
             • Choose a time when you're usually winding down, like nighttime

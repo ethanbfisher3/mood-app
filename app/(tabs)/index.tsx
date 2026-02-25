@@ -1,9 +1,8 @@
 import Ionicons from "@expo/vector-icons/Ionicons"
 import { useRouter } from "expo-router"
-import React, { useCallback, useEffect, useMemo, useState } from "react"
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import {
   Alert,
-  Dimensions,
   Image,
   Keyboard,
   Modal,
@@ -15,9 +14,9 @@ import {
   TouchableOpacity,
   View,
 } from "react-native"
+
 import { Calendar } from "react-native-calendars"
 import { Swipeable } from "react-native-gesture-handler"
-import Svg, { Circle, Line, Rect } from "react-native-svg"
 
 import { ThemedText } from "@/components/themed-text"
 import { ThemedView } from "@/components/themed-view"
@@ -30,12 +29,9 @@ import {
 import { useMoodStorage } from "@/hooks/use-mood-storage"
 import { PRO_FEATURES, useProSubscription } from "@/hooks/use-pro-subscription"
 import { useThemeColor } from "@/hooks/use-theme-color"
+import { computeMoodDistribution } from "@/lib/mood-distribution"
 
 type TimeRange = "week" | "month" | "year"
-
-const SCREEN_WIDTH = Dimensions.get("window").width
-const CHART_PADDING = 40
-const CHART_WIDTH = SCREEN_WIDTH - CHART_PADDING * 2
 
 export default function TrendsScreen({ isDevView }: { isDevView?: boolean }) {
   const router = useRouter()
@@ -68,6 +64,32 @@ export default function TrendsScreen({ isDevView }: { isDevView?: boolean }) {
   const backgroundColor = useThemeColor({}, "background")
   const textColor = useThemeColor({}, "text")
   const [keyboardHeight, setKeyboardHeight] = useState(0)
+
+  const leftGridScrollRef = useRef<ScrollView | null>(null)
+  const rightGridScrollRef = useRef<ScrollView | null>(null)
+  const rightHorizontalRef = useRef<ScrollView | null>(null)
+  const labelScrollRef = useRef<ScrollView | null>(null)
+  const isSyncingScroll = useRef(false)
+
+  const onLeftGridScroll = (e: any) => {
+    if (isSyncingScroll.current) {
+      isSyncingScroll.current = false
+      return
+    }
+    const y = e.nativeEvent.contentOffset.y
+    isSyncingScroll.current = true
+    rightGridScrollRef.current?.scrollTo({ y, animated: false })
+  }
+
+  const onRightGridScroll = (e: any) => {
+    if (isSyncingScroll.current) {
+      isSyncingScroll.current = false
+      return
+    }
+    const y = e.nativeEvent.contentOffset.y
+    isSyncingScroll.current = true
+    leftGridScrollRef.current?.scrollTo({ y, animated: false })
+  }
 
   useEffect(() => {
     const showEvent =
@@ -277,19 +299,7 @@ export default function TrendsScreen({ isDevView }: { isDevView?: boolean }) {
     }
 
     // Mood distribution (counts across all recorded moods)
-    const moodCounts: Record<string, number> = {}
-    entries.forEach((e) => {
-      getEntryMoods(e).forEach((m) => {
-        moodCounts[m] = (moodCounts[m] || 0) + 1
-      })
-    })
-    const totalMoodOccurrences =
-      Object.values(moodCounts).reduce((a, b) => a + b, 0) || 1
-    const moodDistribution = MOOD_OPTIONS.map((m) => ({
-      mood: m.type,
-      count: moodCounts[m.type] || 0,
-      percentage: ((moodCounts[m.type] || 0) / totalMoodOccurrences) * 100,
-    })).filter((d) => d.count > 0)
+    const moodDistribution = computeMoodDistribution(entries)
 
     // Best/worst day of week
     const dayNames = [
@@ -647,6 +657,8 @@ export default function TrendsScreen({ isDevView }: { isDevView?: boolean }) {
   const renderSimpleChart = () => {
     const chartPadding = 6 // Padding to prevent point cutoff
     const chartHeight = 150
+    const cellSize = 32
+    const cellGap = 8
     const maxBarHeight = chartHeight - chartPadding * 2
     const baseBarWidth =
       timeRange === "week" ? 35 : timeRange === "month" ? 10 : 30
@@ -684,14 +696,10 @@ export default function TrendsScreen({ isDevView }: { isDevView?: boolean }) {
       })
     } else if (timeRange === "month") {
       // Generate labels for each data point, showing day number at intervals
-      xLabels = chartData.map((d, index) => {
-        // Parse day directly from YYYY-MM-DD string to avoid timezone issues
+      // Show every day number for month view
+      xLabels = chartData.map((d) => {
         const dayOfMonth = parseInt(d.date.split("-")[2], 10)
-        // Show label every 5 days
-        if (index % 5 === 0) {
-          return dayOfMonth.toString()
-        }
-        return ""
+        return dayOfMonth.toString()
       })
     } else if (timeRange === "year") {
       // Generate labels based on the chartData month order
@@ -703,219 +711,155 @@ export default function TrendsScreen({ isDevView }: { isDevView?: boolean }) {
 
     return (
       <ThemedView style={styles.chartContainer}>
-        {/* Date range header with navigation */}
-        <View style={styles.chartHeader}>
-          <ThemedText style={styles.dateRangeText}>{dateRangeText}</ThemedText>
-          <View style={styles.chartNavigation}>
-            <TouchableOpacity
-              onPress={() => setChartOffset(chartOffset - 1)}
-              disabled={!hasEntriesBefore}
-              style={[
-                styles.navArrow,
-                !hasEntriesBefore && styles.navArrowDisabled,
-              ]}
+        <View style={{ height: chartHeight, width: "100%" }}>
+          {/* Layout: fixed left emoji column + right area that scrolls horizontally. */}
+          <View style={{ flexDirection: "row" }}>
+            {/* Left emoji column stays fixed horizontally; it still scrolls vertically. */}
+            <ScrollView
+              ref={(ref) => {
+                leftGridScrollRef.current = ref
+              }}
+              onScroll={onLeftGridScroll}
+              scrollEventThrottle={16}
+              showsVerticalScrollIndicator={false}
+              nestedScrollEnabled={true}
+              contentContainerStyle={{ paddingTop: 8, paddingBottom: 40 }}
+              style={{ width: cellSize + cellGap }}
             >
-              <ThemedText
-                style={[
-                  styles.navArrowText,
-                  !hasEntriesBefore && styles.navArrowTextDisabled,
-                ]}
-              >
-                ←
-              </ThemedText>
-            </TouchableOpacity>
-            <TouchableOpacity
-              onPress={() => setChartOffset(chartOffset + 1)}
-              disabled={!hasEntriesAfter}
-              style={[
-                styles.navArrow,
-                !hasEntriesAfter && styles.navArrowDisabled,
-              ]}
-            >
-              <ThemedText
-                style={[
-                  styles.navArrowText,
-                  !hasEntriesAfter && styles.navArrowTextDisabled,
-                ]}
-              >
-                →
-              </ThemedText>
-            </TouchableOpacity>
-          </View>
-        </View>
-
-        <View style={styles.chartGestureArea}>
-          <View style={{ ...styles.chartRow, width: "100%" }}>
-            {/* Y-axis labels - fixed position */}
-            <View style={styles.yAxis}>
-              {MOOD_OPTIONS.map((mood) => (
-                <Image
-                  key={mood.type}
-                  source={mood.image}
-                  style={styles.yAxisImage}
-                />
+              {MOOD_OPTIONS.map((moodRow) => (
+                <View
+                  key={`label-${moodRow.type}`}
+                  style={{
+                    height: cellSize,
+                    marginBottom: cellGap,
+                    alignItems: "center",
+                    justifyContent: "center",
+                  }}
+                >
+                  <Image
+                    source={moodRow.image}
+                    style={{ width: cellSize, height: cellSize }}
+                  />
+                </View>
               ))}
-            </View>
+              {/* Ensure bottom-left intersection stays blank by reserving space equal to one cell */}
+              <View style={{ height: cellSize + cellGap }} />
+            </ScrollView>
 
-            {/* Scrollable chart */}
+            {/* Right area: horizontal scrolling for days; contains a vertical grid and x-axis labels fixed below it. */}
             <ScrollView
               horizontal
+              ref={(ref) => {
+                rightHorizontalRef.current = ref
+              }}
               showsHorizontalScrollIndicator={false}
-              contentContainerStyle={styles.chartScrollContent}
-              style={{ flex: 1 }}
+              contentContainerStyle={{ paddingRight: 16 }}
               onScrollBeginDrag={() => setSelectedBarIndex(null)}
+              onScroll={(e: any) => {
+                const x = e.nativeEvent.contentOffset.x
+                labelScrollRef.current?.scrollTo({ x, animated: false })
+              }}
+              scrollEventThrottle={16}
             >
               <View>
-                {/* Chart */}
-                <View
-                  style={{
-                    height: chartHeight,
-                    width: chartData.length * (barWidth + gap),
-                    position: "relative",
+                <ScrollView
+                  ref={(ref) => {
+                    rightGridScrollRef.current = ref
                   }}
+                  onScroll={onRightGridScroll}
+                  scrollEventThrottle={16}
+                  nestedScrollEnabled={true}
+                  showsVerticalScrollIndicator={false}
+                  style={{ height: chartHeight }}
+                  contentContainerStyle={{ paddingVertical: 8 }}
                 >
-                  <Svg
-                    width={chartData.length * (barWidth + gap)}
-                    height={chartHeight}
-                  >
-                    {timeRange === "year" ? (
-                      /* Bar chart for year view */
-                      chartData.map((point, index) => {
-                        if (point.value === null) return null
-                        const barHeight = ((point.value - 1) / 4) * maxBarHeight
-                        const x = index * (barWidth + gap)
-                        const y = chartPadding + maxBarHeight - barHeight
+                  {MOOD_OPTIONS.map((moodRow) => (
+                    <View
+                      key={`row-${moodRow.type}`}
+                      style={{
+                        flexDirection: "row",
+                        alignItems: "center",
+                        height: cellSize,
+                        marginBottom: cellGap,
+                        paddingRight: 4,
+                      }}
+                    >
+                      {chartData.map((point, colIndex) => {
+                        const entry = point.entry
+                        const hasMood = entry
+                          ? getEntryMoods(entry).includes(moodRow.type)
+                          : false
                         return (
-                          <Rect
-                            key={`bar-${index}`}
-                            x={x}
-                            y={y}
-                            width={barWidth}
-                            height={barHeight}
-                            fill={
-                              selectedBarIndex === index ? "#388E3C" : "#4CAF50"
-                            }
-                            rx={4}
-                            ry={4}
+                          <View
+                            key={`${moodRow.type}-${colIndex}`}
+                            style={{
+                              width: cellSize,
+                              height: cellSize,
+                              marginRight: cellGap,
+                              borderRadius: 6,
+                              backgroundColor: hasMood
+                                ? moodRow.color
+                                : "rgba(150,150,150,0.08)",
+                            }}
                           />
                         )
-                      })
-                    ) : (
-                      <>
-                        {/* Draw lines connecting points */}
-                        {chartData.map((point, index) => {
-                          if (point.value === null) return null
-                          // Find previous non-null point
-                          let prevIndex = -1
-                          for (let i = index - 1; i >= 0; i--) {
-                            if (chartData[i].value !== null) {
-                              prevIndex = i
-                              break
-                            }
-                          }
-                          if (prevIndex === -1) return null
-
-                          const prevPoint = chartData[prevIndex]
-                          const x1 = prevIndex * (barWidth + gap) + barWidth / 2
-                          const y1 =
-                            chartPadding +
-                            maxBarHeight -
-                            ((prevPoint.value! - 1) / 4) * maxBarHeight
-                          const x2 = index * (barWidth + gap) + barWidth / 2
-                          const y2 =
-                            chartPadding +
-                            maxBarHeight -
-                            ((point.value - 1) / 4) * maxBarHeight
-
-                          return (
-                            <Line
-                              key={`line-${index}`}
-                              x1={x1}
-                              y1={y1}
-                              x2={x2}
-                              y2={y2}
-                              stroke="#4CAF50"
-                              strokeWidth={2}
-                            />
-                          )
-                        })}
-                        {/* Draw points */}
-                        {chartData.map((point, index) => {
-                          if (point.value === null) return null
-                          const x = index * (barWidth + gap) + barWidth / 2
-                          const y =
-                            chartPadding +
-                            maxBarHeight -
-                            ((point.value - 1) / 4) * maxBarHeight
-                          return (
-                            <Circle
-                              key={`point-${index}`}
-                              cx={x}
-                              cy={y}
-                              r={4}
-                              fill="#4CAF50"
-                            />
-                          )
-                        })}
-                      </>
-                    )}
-                  </Svg>
-
-                  {/* Touchable overlays for bar chart */}
-                  {timeRange === "year" &&
-                    chartData.map((point, index) => {
-                      if (point.value === null) return null
-                      const x = index * (barWidth + gap)
-                      return (
-                        <TouchableOpacity
-                          key={`touch-${index}`}
-                          style={{
-                            position: "absolute",
-                            left: x,
-                            top: 0,
-                            width: barWidth,
-                            height: chartHeight,
-                          }}
-                          onPress={() => {
-                            console.log(
-                              "year-bar-press",
-                              index,
-                              chartData[index]?.date,
-                              chartData[index]?.value,
-                            )
-                            setSelectedBarIndex((prev) =>
-                              prev === index ? null : index,
-                            )
-                          }}
-                          activeOpacity={0.7}
-                        />
-                      )
-                    })}
-                </View>
-
-                {/* X-axis labels */}
-                <View
-                  style={{
-                    ...styles.xAxisContainer,
-                    width: chartData.length * (barWidth + gap),
-                  }}
-                >
-                  {xLabels.map((label, index) => (
-                    <ThemedText
-                      key={index}
-                      style={[
-                        styles.xAxisLabel,
-                        { width: barWidth + gap, textAlign: "center" },
-                        timeRange === "month" && { fontSize: 10 },
-                      ]}
-                      numberOfLines={1}
-                    >
-                      {label}
-                    </ThemedText>
+                      })}
+                    </View>
                   ))}
-                </View>
+                </ScrollView>
+
+                {/* X-axis labels aligned with grid columns — placed inside the horizontal ScrollView but outside the vertical ScrollView so they remain visible during vertical scroll. */}
+                <View style={{ height: 24, marginTop: 6 }} />
               </View>
             </ScrollView>
+            {/* Floating label row positioned above the left emoji column so numbers render on top. */}
+            <ScrollView
+              horizontal
+              ref={(ref) => {
+                labelScrollRef.current = ref
+              }}
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={{ paddingRight: 16 }}
+              style={{
+                position: "absolute",
+                bottom: 6,
+                left: cellSize + cellGap,
+                right: 16,
+                height: 24,
+                zIndex: 20,
+                backgroundColor: "transparent",
+              }}
+              pointerEvents="none"
+            >
+              {xLabels.map((label, idx) => (
+                <ThemedText
+                  key={`label-top-${idx}`}
+                  style={{
+                    width: cellSize,
+                    textAlign: timeRange === "year" ? "center" : "right",
+                    paddingRight: timeRange === "year" ? 8 : 16,
+                    marginRight: cellGap,
+                    fontSize: timeRange === "year" ? 10 : 12,
+                  }}
+                  numberOfLines={1}
+                >
+                  {timeRange === "year" ? String(label).slice(0, 3) : label}
+                </ThemedText>
+              ))}
+            </ScrollView>
+            {/* Cover bottom-left so emojis don't sit in the corner */}
+            <View
+              style={{
+                position: "absolute",
+                left: 0,
+                bottom: 0,
+                width: cellSize,
+                height: cellSize,
+                backgroundColor: "rgb(29, 29, 29)",
+                zIndex: 15,
+              }}
+              pointerEvents="none"
+            />
           </View>
         </View>
 
@@ -1083,6 +1027,7 @@ export default function TrendsScreen({ isDevView }: { isDevView?: boolean }) {
             textAlignVertical="top"
             blurOnSubmit={true}
             returnKeyType="done"
+            maxLength={75}
           />
 
           <TouchableOpacity
@@ -1164,7 +1109,6 @@ export default function TrendsScreen({ isDevView }: { isDevView?: boolean }) {
             onPress={() => setUpgradeModalVisible(true)}
             activeOpacity={0.8}
           >
-            <ThemedText style={styles.upgradeButtonEmoji}>⭐</ThemedText>
             <View style={styles.upgradeButtonTextContainer}>
               <ThemedText style={styles.upgradeButtonTitle}>
                 Upgrade to Pro
@@ -1181,7 +1125,9 @@ export default function TrendsScreen({ isDevView }: { isDevView?: boolean }) {
         {isPro && (
           <View style={styles.proBadge}>
             <ThemedText style={styles.proBadgeEmoji}>⭐</ThemedText>
-            <ThemedText style={styles.proBadgeText}>Pro Member</ThemedText>
+            <ThemedText style={styles.proBadgeText}>
+              You are a Pro Member
+            </ThemedText>
           </View>
         )}
 
@@ -1190,7 +1136,7 @@ export default function TrendsScreen({ isDevView }: { isDevView?: boolean }) {
           <ThemedView style={styles.todayMoodMultiContainer}>
             <View style={styles.todayMoodMultiHeader}>
               <ThemedText style={styles.todayMoodMultiTitle}>
-                🎭 Today's Moods
+                Today's Moods
               </ThemedText>
               <ThemedText style={styles.todayMoodMultiCount}>
                 {todaysMoods.length}{" "}
@@ -1343,7 +1289,7 @@ export default function TrendsScreen({ isDevView }: { isDevView?: boolean }) {
         {isPro ? (
           <ThemedView style={styles.statsContainer}>
             <ThemedText type="subtitle" style={styles.statsTitle}>
-              📊 Advanced Statistics
+              Advanced Statistics
             </ThemedText>
 
             <View style={styles.statsGrid}>
@@ -1388,10 +1334,22 @@ export default function TrendsScreen({ isDevView }: { isDevView?: boolean }) {
             {/* Mood Distribution */}
             {advancedStats.moodDistribution.length > 0 && (
               <View style={styles.analyticsSection}>
-                <ThemedText style={styles.analyticsSectionTitle}>
-                  Mood Distribution
-                </ThemedText>
-                {advancedStats.moodDistribution.map((item) => {
+                <View style={styles.analyticsSectionTitleContainer}>
+                  <ThemedText style={styles.analyticsSectionTitle}>
+                    Mood Distribution
+                  </ThemedText>
+
+                  {advancedStats.moodDistribution.length > 5 && (
+                    <TouchableOpacity
+                      onPress={() => router.push({ pathname: "/distribution" })}
+                    >
+                      <ThemedText style={styles.showAllText}>
+                        Show all
+                      </ThemedText>
+                    </TouchableOpacity>
+                  )}
+                </View>
+                {advancedStats.moodDistribution.slice(0, 5).map((item) => {
                   const mood = getMoodOption(item.mood)
                   return (
                     <View key={item.mood} style={styles.distributionRow}>
@@ -1536,43 +1494,49 @@ export default function TrendsScreen({ isDevView }: { isDevView?: boolean }) {
               .slice(0, 3)
               .map((entry) => {
                 const cardContent = (
-                  <>
-                    {entry.moods && entry.moods.length > 1 ? (
-                      <ScrollView
-                        horizontal
-                        showsHorizontalScrollIndicator={false}
-                        nestedScrollEnabled={true}
-                        directionalLockEnabled={true}
-                        style={styles.moodScrollView}
-                      >
-                        <View style={styles.moodScrollContent}>
-                          {entry.moods.map((mood: MoodType) => {
-                            const moodOption = getMoodOption(mood)
-                            return (
-                              <Image
-                                key={moodOption.type}
-                                source={moodOption.image}
-                                style={styles.entryImage}
-                              />
-                            )
-                          })}
-                        </View>
-                      </ScrollView>
-                    ) : (
-                      entry.mood ||
-                      (entry.moods && entry.moods.length == 1 && (
-                        <Image
-                          key={
-                            getMoodOption(entry.mood || entry.moods![0]).type
-                          }
-                          source={
-                            getMoodOption(entry.mood || entry.moods![0]).image
-                          }
-                          style={styles.entryImage}
-                        />
-                      ))
-                    )}
-                    <View style={styles.entryInfo}>
+                  <View>
+                    <View
+                      style={{
+                        flexDirection: "row",
+                        alignItems: "center",
+                        width: "100%",
+                      }}
+                    >
+                      {entry.moods && entry.moods.length > 1 ? (
+                        <ScrollView
+                          horizontal
+                          showsHorizontalScrollIndicator={false}
+                          nestedScrollEnabled={true}
+                          directionalLockEnabled={true}
+                          style={styles.moodScrollView}
+                        >
+                          <View style={styles.moodScrollContent}>
+                            {entry.moods.map((mood: MoodType) => {
+                              const moodOption = getMoodOption(mood)
+                              return (
+                                <Image
+                                  key={moodOption.type}
+                                  source={moodOption.image}
+                                  style={styles.entryImage}
+                                />
+                              )
+                            })}
+                          </View>
+                        </ScrollView>
+                      ) : (
+                        entry.mood ||
+                        (entry.moods && entry.moods.length == 1 && (
+                          <Image
+                            key={
+                              getMoodOption(entry.mood || entry.moods![0]).type
+                            }
+                            source={
+                              getMoodOption(entry.mood || entry.moods![0]).image
+                            }
+                            style={styles.entryImage}
+                          />
+                        ))
+                      )}
                       <ThemedText style={styles.entryDate}>
                         {new Date(entry.date).toLocaleDateString("en-US", {
                           weekday: "short",
@@ -1580,13 +1544,13 @@ export default function TrendsScreen({ isDevView }: { isDevView?: boolean }) {
                           day: "numeric",
                         })}
                       </ThemedText>
-                      {entry.note && (
-                        <ThemedText style={styles.entryNote} numberOfLines={2}>
-                          {entry.note}
-                        </ThemedText>
-                      )}
                     </View>
-                  </>
+                    {entry.note && (
+                      <ThemedText style={styles.entryNote} numberOfLines={2}>
+                        {entry.note}
+                      </ThemedText>
+                    )}
+                  </View>
                 )
                 const renderDeleteAction = () => (
                   <TouchableOpacity
@@ -1673,7 +1637,6 @@ export default function TrendsScreen({ isDevView }: { isDevView?: boolean }) {
             </View>
 
             <View style={styles.proHeaderSection}>
-              <ThemedText style={styles.proHeaderEmoji}>⭐</ThemedText>
               <ThemedText style={styles.proHeaderTitle}>
                 Mood Tracker Pro
               </ThemedText>
@@ -1688,9 +1651,6 @@ export default function TrendsScreen({ isDevView }: { isDevView?: boolean }) {
             >
               {PRO_FEATURES.map((feature) => (
                 <View key={feature.id} style={styles.featureItem}>
-                  <ThemedText style={styles.featureEmoji}>
-                    {feature.emoji}
-                  </ThemedText>
                   <View style={styles.featureTextContainer}>
                     <ThemedText style={styles.featureTitle}>
                       {feature.title}
@@ -1886,6 +1846,11 @@ export default function TrendsScreen({ isDevView }: { isDevView?: boolean }) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+  },
+  analyticsSectionTitleContainer: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
   },
   scrollContent: {
     padding: 20,
@@ -2650,7 +2615,7 @@ const styles = StyleSheet.create({
     textAlign: "center",
   },
   featuresScrollView: {
-    maxHeight: 240,
+    maxHeight: 275,
     marginBottom: 20,
   },
   featureItem: {
