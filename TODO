@@ -1,1 +1,3 @@
-Multiple mood options
+On android, when adding a time with the calendar, don't use the cancel and add buttons because android has its own thing
+Fix sizes and styles in case a user is on an ipad
+Remove emojis that are hardcoded in the .tsx files and put images instead
