@@ -25,6 +25,20 @@ In the output, you'll find options to open the app in a
 
 You can start developing by editing the files inside the **app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
 
+## Building
+
+upgrade EAS CLI with:
+npm install -g eas-cli
+eas login
+
+### Android Build
+
+npx eas build --platform android --profile production
+
+### iOS Build
+
+npx eas build --platform ios --profile production
+
 ## Get a fresh project
 
 When you're ready, run:
