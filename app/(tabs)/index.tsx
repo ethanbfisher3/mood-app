@@ -656,7 +656,7 @@ export default function TrendsScreen({ isDevView }: { isDevView?: boolean }) {
 
   const renderSimpleChart = () => {
     const chartPadding = 6 // Padding to prevent point cutoff
-    const chartHeight = 150
+    const chartHeight = 400
     const cellSize = 32
     const cellGap = 8
     const maxBarHeight = chartHeight - chartPadding * 2
