@@ -2,9 +2,8 @@ import { HapticTab } from "@/components/haptic-tab"
 import { IconSymbol } from "@/components/ui/icon-symbol"
 import { Colors } from "@/constants/theme"
 import { useColorScheme } from "@/hooks/use-color-scheme"
-import { useProSubscription } from "@/hooks/use-pro-subscription"
-import React, { useCallback, useRef, useState } from "react"
-import { StyleSheet, Text, TouchableOpacity, View } from "react-native"
+import { useCallback, useRef, useState } from "react"
+import { StyleSheet, Text, View } from "react-native"
 import PagerView from "react-native-pager-view"
 import { SafeAreaView } from "react-native-safe-area-context"
 
@@ -16,12 +15,10 @@ const TABS = [
   { key: "notifications", title: "Reminders", icon: "bell.fill" as const },
 ]
 
-export default function TabLayout() {
-  const colorScheme = useColorScheme()
+export default function TabLayout({ isDevView }: { isDevView: boolean }) {
+  let colorScheme = useColorScheme()
   const pagerRef = useRef<PagerView>(null)
   const [currentPage, setCurrentPage] = useState(0)
-  const [isDevView, setIsDevView] = useState(true)
-  const { isPro, togglePro } = useProSubscription()
 
   const handlePageSelected = useCallback(
     (e: { nativeEvent: { position: number } }) => {
@@ -59,34 +56,6 @@ export default function TabLayout() {
         </View>
       </PagerView>
 
-      {/* Dev-only Pro Toggle Button */}
-      {__DEV__ && (
-        <TouchableOpacity
-          style={[styles.devViewToggleButton, styles.devProToggleButton]}
-          onPress={async () => {
-            await togglePro()
-          }}
-        >
-          <Text style={styles.devViewToggleText}>
-            {isPro ? "⭐ Disable Pro" : "⭐ Enable Pro"}
-          </Text>
-        </TouchableOpacity>
-      )}
-
-      {/* Dev/Prod View Toggle Button */}
-      {__DEV__ && (
-        <TouchableOpacity
-          style={[
-            styles.devViewToggleButton,
-            !isDevView && styles.devViewToggleProd,
-          ]}
-          onPress={() => setIsDevView((v) => !v)}
-        >
-          <Text style={styles.devViewToggleText}>
-            {isDevView ? "🛠️ DEV" : "📱 PROD"}
-          </Text>
-        </TouchableOpacity>
-      )}
 
       {/* Custom Tab Bar */}
       <View style={[styles.tabBar, { backgroundColor: tabBarBackground }]}>
@@ -136,32 +105,5 @@ const styles = StyleSheet.create({
     fontSize: 10,
     marginTop: 4,
     fontWeight: "500",
-  },
-  devViewToggleButton: {
-    position: "absolute",
-    bottom: 80,
-    left: 20,
-    backgroundColor: "#FF9800",
-    paddingVertical: 8,
-    paddingHorizontal: 14,
-    borderRadius: 20,
-    elevation: 4,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.25,
-    shadowRadius: 4,
-    zIndex: 999,
-  },
-  devViewToggleProd: {
-    backgroundColor: "#4CAF50",
-  },
-  devProToggleButton: {
-    bottom: 120,
-    backgroundColor: "#9C27B0",
-  },
-  devViewToggleText: {
-    color: "white",
-    fontWeight: "600",
-    fontSize: 14,
   },
 })

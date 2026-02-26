@@ -1,6 +1,6 @@
 import Ionicons from "@expo/vector-icons/Ionicons"
 import { useRouter } from "expo-router"
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import {
   Alert,
   Image,
@@ -855,7 +855,7 @@ export default function TrendsScreen({ isDevView }: { isDevView?: boolean }) {
                 bottom: 0,
                 width: cellSize,
                 height: cellSize,
-                backgroundColor: "rgb(29, 29, 29)",
+                backgroundColor: backgroundColor === "#151718" ? "rgb(29, 29, 29)" : "rgb(249, 249, 249)",
                 zIndex: 15,
               }}
               pointerEvents="none"
