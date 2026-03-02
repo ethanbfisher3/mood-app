@@ -52,6 +52,9 @@ export default function TrendsScreen({ isDevView }: { isDevView?: boolean }) {
   const [isSaving, setIsSaving] = useState(false)
   const [zoomLevel, setZoomLevel] = useState(1)
   const [selectedBarIndex, setSelectedBarIndex] = useState<number | null>(null)
+  const [selectedMoodType, setSelectedMoodType] = useState<MoodType | null>(
+    null,
+  )
   const [chartOffset, setChartOffset] = useState(0) // 0 = current period, negative = past
   const [devModalVisible, setDevModalVisible] = useState(false)
   const [devSelectedMoods, setDevSelectedMoods] = useState<MoodType[]>([])
@@ -59,7 +62,7 @@ export default function TrendsScreen({ isDevView }: { isDevView?: boolean }) {
   const [editingEntryId, setEditingEntryId] = useState<string | null>(null)
   const [upgradeModalVisible, setUpgradeModalVisible] = useState(false)
 
-  const { isPro, togglePro } = useProSubscription()
+  const { isPro } = useProSubscription()
 
   const backgroundColor = useThemeColor({}, "background")
   const textColor = useThemeColor({}, "text")
@@ -108,16 +111,6 @@ export default function TrendsScreen({ isDevView }: { isDevView?: boolean }) {
     }
   }, [])
 
-  // Helper to normalize moods for an entry
-  const getEntryMoods = (e: MoodEntry) => {
-    // @ts-ignore - support legacy `mood` and new `moods`
-    if (Array.isArray((e as any).moods) && (e as any).moods.length > 0)
-      return (e as any).moods as MoodType[]
-    // @ts-ignore
-    if ((e as any).mood) return [(e as any).mood as MoodType]
-    return []
-  }
-
   // Load today's mood when modal opens
   const openMoodModal = useCallback(() => {
     setEditingEntryId(null)
@@ -128,7 +121,7 @@ export default function TrendsScreen({ isDevView }: { isDevView?: boolean }) {
     } else {
       const todaysMood = getTodaysMood()
       if (todaysMood) {
-        setSelectedMoods(getEntryMoods(todaysMood))
+        setSelectedMoods(todaysMood.moods)
         setNote(todaysMood.note || "")
       } else {
         setSelectedMoods([])
@@ -138,19 +131,10 @@ export default function TrendsScreen({ isDevView }: { isDevView?: boolean }) {
     setModalVisible(true)
   }, [getTodaysMood, isPro])
 
-  const getEntryAverageValue = (e: MoodEntry) => {
-    const moods: MoodType[] = getEntryMoods(e)
-    if (moods.length === 0) return 3
-    const vals = moods.map(
-      (m) => MOOD_OPTIONS.find((o) => o.type === m)?.value ?? 3,
-    )
-    return vals.reduce((a, b) => a + b, 0) / vals.length
-  }
-
   // Open modal to edit a specific entry
   const openEditMoodModal = useCallback((entry: MoodEntry) => {
     setEditingEntryId(entry.id)
-    setSelectedMoods(getEntryMoods(entry))
+    setSelectedMoods(entry.moods)
     setNote(entry.note || "")
     setModalVisible(true)
   }, [])
@@ -241,16 +225,13 @@ export default function TrendsScreen({ isDevView }: { isDevView?: boolean }) {
   // Calculate stats
   const stats = useMemo(() => {
     if (filteredEntries.length === 0) {
-      return { avgMood: 0, mostCommon: null, streak: 0 }
+      return { mostCommon: null, streak: 0 }
     }
-
-    const moodValues = filteredEntries.map((e) => getEntryAverageValue(e))
-    const avgMood = moodValues.reduce((a, b) => a + b, 0) / moodValues.length
 
     // Most common mood
     const moodCounts: Record<string, number> = {}
-    filteredEntries.forEach((e) => {
-      getEntryMoods(e).forEach((m) => {
+    filteredEntries.forEach((e: MoodEntry) => {
+      e.moods.forEach((m) => {
         moodCounts[m] = (moodCounts[m] || 0) + 1
       })
     })
@@ -316,8 +297,7 @@ export default function TrendsScreen({ isDevView }: { isDevView?: boolean }) {
       const [y, m, d] = e.date.split("-").map(Number)
       const day = new Date(y, m - 1, d).getDay()
       if (!dayMoods[day]) dayMoods[day] = []
-      const val = getEntryAverageValue(e)
-      dayMoods[day].push(val)
+      dayMoods[day].push(...e.moods.map((mood) => getMoodOption(mood).value))
     })
     let bestDay: string | null = null
     let worstDay: string | null = null
@@ -337,7 +317,12 @@ export default function TrendsScreen({ isDevView }: { isDevView?: boolean }) {
     })
 
     // Mood variability (standard deviation)
-    const allValues = entries.map((e) => getEntryAverageValue(e))
+    const allValues = entries.map(
+      (e) =>
+        e.moods
+          .map((mood) => getMoodOption(mood).value)
+          .reduce((a, b) => a + b, 0) / e.moods.length,
+    )
     const mean = allValues.reduce((a, b) => a + b, 0) / allValues.length
     const variance =
       allValues.reduce((sum, v) => sum + Math.pow(v - mean, 2), 0) /
@@ -395,30 +380,11 @@ export default function TrendsScreen({ isDevView }: { isDevView?: boolean }) {
       const now = new Date()
       return (now.getTime() - d.getTime()) / (1000 * 60 * 60 * 24) <= 7
     })
-    if (recentEntries.length >= 3 && entries.length >= 10) {
-      const recentAvg =
-        recentEntries
-          .map((e) => getEntryAverageValue(e))
-          .reduce((a, b) => a + b, 0) / recentEntries.length
-      const overallAvg = stats.avgMood
-      const diff = recentAvg - overallAvg
-      if (diff > 0.5) {
-        result.push({
-          emoji: "📈",
-          text: `Your mood this week is trending higher than your average. Whatever you're doing, keep it up!`,
-        })
-      } else if (diff < -0.5) {
-        result.push({
-          emoji: "💙",
-          text: `Your mood has been a bit lower this week compared to your average. Consider activities that usually lift your spirits.`,
-        })
-      }
-    }
 
     // Best day insight
     if (advancedStats.bestDayOfWeek) {
       result.push({
-        emoji: "☀️",
+        emoji: "TODO",
         text: `${advancedStats.bestDayOfWeek}s tend to be your best days. Plan activities you enjoy on your harder days!`,
       })
     }
@@ -426,12 +392,12 @@ export default function TrendsScreen({ isDevView }: { isDevView?: boolean }) {
     // Variability insight
     if (advancedStats.moodVariability > 1.2) {
       result.push({
-        emoji: "🎢",
+        emoji: "TODO",
         text: `Your moods show significant variation. Journaling notes with your entries may help identify triggers.`,
       })
     } else if (advancedStats.moodVariability < 0.5 && entries.length >= 7) {
       result.push({
-        emoji: "⚖️",
+        emoji: "TODO",
         text: `Your mood has been quite stable. This consistency suggests good emotional balance.`,
       })
     }
@@ -442,12 +408,12 @@ export default function TrendsScreen({ isDevView }: { isDevView?: boolean }) {
     )
     if (entriesWithNotes.length === 0 && entries.length >= 5) {
       result.push({
-        emoji: "📝",
+        emoji: "TODO",
         text: `Try adding notes to your mood entries — it helps you reflect on what influences your feelings.`,
       })
     } else if (entriesWithNotes.length > entries.length * 0.5) {
       result.push({
-        emoji: "✍️",
+        emoji: "TODO",
         text: `Great job adding notes! Your reflections make your mood data much more meaningful.`,
       })
     }
@@ -455,7 +421,7 @@ export default function TrendsScreen({ isDevView }: { isDevView?: boolean }) {
     // Longest streak
     if (advancedStats.longestStreak >= 14) {
       result.push({
-        emoji: "🏆",
+        emoji: "TODO",
         text: `Your all-time longest streak is ${advancedStats.longestStreak} days. Incredible dedication!`,
       })
     }
@@ -505,33 +471,17 @@ export default function TrendsScreen({ isDevView }: { isDevView?: boolean }) {
     const data: { date: string; value: number | null; entry?: MoodEntry }[] = []
 
     if (timeRange === "year") {
-      // For year view, show 12 months ending at the current month (with offset)
+      // For year view, always show January through December of the current year (with offset)
       const now = new Date()
-      // Calculate the end month based on offset (each offset step = 12 months)
-      const endDate = new Date(
-        now.getFullYear() + chartOffset,
-        now.getMonth(),
-        1,
-      )
-      const endMonth = endDate.getMonth()
-      const endYear = endDate.getFullYear()
+      const year = now.getFullYear() + chartOffset
 
-      // Start 11 months before the end month
-      const startDate = new Date(endYear, endMonth - 11, 1)
-      const startMonth = startDate.getMonth()
-      const startYear = startDate.getFullYear()
-
-      // Generate 12 months of data
-      for (let i = 0; i < 12; i++) {
-        const monthIndex = (startMonth + i) % 12
-        const year = startYear + Math.floor((startMonth + i) / 12)
-
+      // Generate 12 months starting from January
+      for (let month = 0; month < 12; month++) {
         // Find entries for this month
         const monthEntries = entries.filter((e) => {
           const entryDate = new Date(e.date)
           return (
-            entryDate.getMonth() === monthIndex &&
-            entryDate.getFullYear() === year
+            entryDate.getMonth() === month && entryDate.getFullYear() === year
           )
         })
 
@@ -543,7 +493,7 @@ export default function TrendsScreen({ isDevView }: { isDevView?: boolean }) {
         }
 
         data.push({
-          date: `${year}-${String(monthIndex + 1).padStart(2, "0")}`,
+          date: `${year}-${String(month + 1).padStart(2, "0")}`,
           value: avgValue,
           entry: monthEntries[0], // Just for reference
         })
@@ -572,14 +522,19 @@ export default function TrendsScreen({ isDevView }: { isDevView?: boolean }) {
         })
       }
     } else {
-      // Week view - daily data for target week (with offset)
+      // Week view - always start on Monday
       const days = rangeConfig[timeRange].days
-      const endDate = new Date()
-      endDate.setDate(endDate.getDate() + chartOffset * 7)
+      const today = new Date()
+      today.setDate(today.getDate() + chartOffset * 7)
 
-      for (let i = days - 1; i >= 0; i--) {
-        const date = new Date(endDate)
-        date.setDate(endDate.getDate() - i)
+      // Find Monday of the current week (0 = Sunday, 1 = Monday)
+      const dayOfWeek = today.getDay()
+      const diff = today.getDate() - dayOfWeek + (dayOfWeek === 0 ? -6 : 1)
+      const monday = new Date(today.setDate(diff))
+
+      for (let i = 0; i < days; i++) {
+        const date = new Date(monday)
+        date.setDate(monday.getDate() + i)
         const dateStr = date.toISOString().split("T")[0]
         const entry = filteredEntries.find((e) => e.date === dateStr)
 
@@ -627,8 +582,9 @@ export default function TrendsScreen({ isDevView }: { isDevView?: boolean }) {
     // Check for entries before/after current view
     let hasBefore = false
     if (timeRange === "year") {
-      // For year view, startDate is "YYYY-MM", so compare with first day of that month
-      hasBefore = entries.some((e) => e.date < startDate + "-01")
+      // For year view, check if there are entries from years before the current year
+      const currentYear = startDate.split("-")[0]
+      hasBefore = entries.some((e) => e.date.split("-")[0] < currentYear)
     } else {
       hasBefore = entries.some((e) => e.date < startDate)
     }
@@ -684,6 +640,7 @@ export default function TrendsScreen({ isDevView }: { isDevView?: boolean }) {
     ]
 
     const dayLabels = ["S", "M", "T", "W", "T", "F", "S"]
+    const dayNamesShort = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
 
     let xLabels: string[] = []
     if (timeRange === "week") {
@@ -692,7 +649,7 @@ export default function TrendsScreen({ isDevView }: { isDevView?: boolean }) {
         // Parse date parts directly to avoid timezone issues
         const [year, month, day] = d.date.split("-").map(Number)
         const date = new Date(year, month - 1, day)
-        return dayLabels[date.getDay()]
+        return dayNamesShort[date.getDay()]
       })
     } else if (timeRange === "month") {
       // Generate labels for each data point, showing day number at intervals
@@ -711,6 +668,63 @@ export default function TrendsScreen({ isDevView }: { isDevView?: boolean }) {
 
     return (
       <ThemedView style={styles.chartContainer}>
+        {/* Navigation Controls - positioned at bottom of chart */}
+        <View
+          style={{
+            position: "absolute",
+            bottom: 0,
+            left: 0,
+            right: 0,
+            flexDirection: "row",
+            alignItems: "center",
+            justifyContent: "center",
+            paddingVertical: 4,
+            marginTop: 4,
+            paddingHorizontal: 16,
+            backgroundColor:
+              backgroundColor === "#151718"
+                ? "rgba(29, 29, 29, 0.95)"
+                : "rgba(249, 249, 249, 0.95)",
+            zIndex: 25,
+            borderRadius: "25%",
+          }}
+          pointerEvents="box-none"
+        >
+          <TouchableOpacity
+            onPress={() => setChartOffset(chartOffset - 1)}
+            disabled={!hasEntriesBefore}
+            style={{
+              padding: 8,
+              marginRight: 12,
+              opacity: hasEntriesBefore ? 1 : 0.2,
+            }}
+          >
+            <Ionicons name="chevron-back" size={24} color={textColor} />
+          </TouchableOpacity>
+          <ThemedText
+            style={{
+              fontSize: 12,
+              opacity: 0.7,
+              textAlign: "center",
+              flex: 1,
+              fontWeight: "500",
+            }}
+            numberOfLines={1}
+          >
+            {dateRangeText}
+          </ThemedText>
+          <TouchableOpacity
+            onPress={() => setChartOffset(chartOffset + 1)}
+            disabled={!hasEntriesAfter}
+            style={{
+              padding: 8,
+              marginLeft: 12,
+              opacity: hasEntriesAfter ? 1 : 0.2,
+            }}
+          >
+            <Ionicons name="chevron-forward" size={24} color={textColor} />
+          </TouchableOpacity>
+        </View>
         <View style={{ height: chartHeight, width: "100%" }}>
           {/* Layout: fixed left emoji column + right area that scrolls horizontally. */}
           <View style={{ flexDirection: "row" }}>
@@ -723,7 +737,7 @@ export default function TrendsScreen({ isDevView }: { isDevView?: boolean }) {
               scrollEventThrottle={16}
               showsVerticalScrollIndicator={false}
               nestedScrollEnabled={true}
-              contentContainerStyle={{ paddingTop: 8, paddingBottom: 40 }}
+              contentContainerStyle={{ paddingTop: 8, paddingBottom: 80 }}
               style={{ width: cellSize + cellGap }}
             >
               {MOOD_OPTIONS.map((moodRow) => (
@@ -754,7 +768,10 @@ export default function TrendsScreen({ isDevView }: { isDevView?: boolean }) {
               }}
               showsHorizontalScrollIndicator={false}
               contentContainerStyle={{ paddingRight: 16 }}
-              onScrollBeginDrag={() => setSelectedBarIndex(null)}
+              onScrollBeginDrag={() => {
+                setSelectedBarIndex(null)
+                setSelectedMoodType(null)
+              }}
               onScroll={(e: any) => {
                 const x = e.nativeEvent.contentOffset.x
                 labelScrollRef.current?.scrollTo({ x, animated: false })
@@ -789,9 +806,27 @@ export default function TrendsScreen({ isDevView }: { isDevView?: boolean }) {
                         const hasMood = entry
                           ? getEntryMoods(entry).includes(moodRow.type)
                           : false
+                        const BoxComponent =
+                          timeRange === "year" ? TouchableOpacity : View
+                        const handleBoxPress = () => {
+                          // Toggle: if same box clicked, close popup
+                          if (
+                            selectedBarIndex === colIndex &&
+                            selectedMoodType === moodRow.type
+                          ) {
+                            setSelectedBarIndex(null)
+                            setSelectedMoodType(null)
+                          } else {
+                            setSelectedBarIndex(colIndex)
+                            setSelectedMoodType(moodRow.type)
+                          }
+                        }
                         return (
-                          <View
+                          <BoxComponent
                             key={`${moodRow.type}-${colIndex}`}
+                            onPress={
+                              timeRange === "year" ? handleBoxPress : undefined
+                            }
                             style={{
                               width: cellSize,
                               height: cellSize,
@@ -809,7 +844,7 @@ export default function TrendsScreen({ isDevView }: { isDevView?: boolean }) {
                 </ScrollView>
 
                 {/* X-axis labels aligned with grid columns — placed inside the horizontal ScrollView but outside the vertical ScrollView so they remain visible during vertical scroll. */}
-                <View style={{ height: 24, marginTop: 6 }} />
+                <View style={{ height: 48, marginTop: 6 }} />
               </View>
             </ScrollView>
             {/* Floating label row positioned above the left emoji column so numbers render on top. */}
@@ -822,7 +857,7 @@ export default function TrendsScreen({ isDevView }: { isDevView?: boolean }) {
               contentContainerStyle={{ paddingRight: 16 }}
               style={{
                 position: "absolute",
-                bottom: 6,
+                bottom: 30,
                 left: cellSize + cellGap,
                 right: 16,
                 height: 24,
@@ -836,17 +871,18 @@ export default function TrendsScreen({ isDevView }: { isDevView?: boolean }) {
                   key={`label-top-${idx}`}
                   style={{
                     width: cellSize,
-                    textAlign: timeRange === "year" ? "center" : "right",
-                    paddingRight: timeRange === "year" ? 8 : 16,
+                    textAlign: timeRange === "month" ? "right" : "center",
+                    paddingRight: timeRange === "month" ? 16 : 8,
                     marginRight: cellGap,
-                    fontSize: timeRange === "year" ? 10 : 12,
+                    fontSize: timeRange === "month" ? 12 : 10,
                   }}
                   numberOfLines={1}
                 >
-                  {timeRange === "year" ? String(label).slice(0, 3) : label}
+                  {timeRange === "month" ? label : String(label).slice(0, 3)}
                 </ThemedText>
               ))}
             </ScrollView>
+
             {/* Cover bottom-left so emojis don't sit in the corner */}
             <View
               style={{
@@ -854,8 +890,11 @@ export default function TrendsScreen({ isDevView }: { isDevView?: boolean }) {
                 left: 0,
                 bottom: 0,
                 width: cellSize,
-                height: cellSize,
-                backgroundColor: backgroundColor === "#151718" ? "rgb(29, 29, 29)" : "rgb(249, 249, 249)",
+                height: 54,
+                backgroundColor:
+                  backgroundColor === "#151718"
+                    ? "rgb(29, 29, 29)"
+                    : "rgb(249, 249, 249)",
                 zIndex: 15,
               }}
               pointerEvents="none"
@@ -863,10 +902,10 @@ export default function TrendsScreen({ isDevView }: { isDevView?: boolean }) {
           </View>
         </View>
 
-        {/* Tooltip for selected bar - rendered outside ScrollView to appear on top */}
+        {/* Tooltip for selected box - rendered outside ScrollView to appear on top */}
         {timeRange === "year" &&
           selectedBarIndex !== null &&
-          chartData[selectedBarIndex]?.value !== null && (
+          selectedMoodType !== null && (
             <View
               style={[
                 styles.barTooltip,
@@ -877,11 +916,7 @@ export default function TrendsScreen({ isDevView }: { isDevView?: boolean }) {
                     barWidth / 2 -
                     40,
                   top:
-                    chartPadding +
-                    maxBarHeight -
-                    ((chartData[selectedBarIndex].value! - 1) / 4) *
-                      maxBarHeight -
-                    50,
+                    chartPadding + maxBarHeight - (3.5 / 4) * maxBarHeight - 50,
                 },
               ]}
             >
@@ -896,59 +931,32 @@ export default function TrendsScreen({ isDevView }: { isDevView?: boolean }) {
                     moodCounts[mt] = (moodCounts[mt] || 0) + 1
                   })
                 })
-                const counts = MOOD_OPTIONS.map((m) => ({
-                  type: m.type,
-                  image: m.image,
-                  label: m.label,
-                  count: moodCounts[m.type] || 0,
-                })).filter((c) => c.count > 0)
 
-                console.log(
-                  "bar-tooltip-render",
-                  monthKey,
-                  monthEntries.length,
-                  counts,
+                const selectedMood = MOOD_OPTIONS.find(
+                  (m) => m.type === selectedMoodType,
                 )
-
-                const [y, mo] = monthKey.split("-").map((s) => parseInt(s, 10))
-                const monthLabel = new Date(
-                  y,
-                  (mo || 1) - 1,
-                  1,
-                ).toLocaleDateString("en-US", {
-                  month: "short",
-                  year: "numeric",
-                })
+                const count = moodCounts[selectedMoodType] || 0
 
                 return (
-                  <>
-                    <ThemedText style={styles.barTooltipText}>
-                      {monthLabel}
-                    </ThemedText>
-                    {counts.length > 0 ? (
-                      counts.map((c) => (
-                        <View
-                          key={c.type}
-                          style={{
-                            flexDirection: "row",
-                            alignItems: "center",
-                            marginTop: 6,
-                          }}
-                        >
-                          <Image source={c.image} style={styles.tooltipImage} />
-                          <ThemedText
-                            style={[styles.barTooltipText, { marginLeft: 8 }]}
-                          >
-                            {c.count}
-                          </ThemedText>
-                        </View>
-                      ))
-                    ) : (
-                      <ThemedText style={styles.barTooltipText}>
-                        No entries this month
-                      </ThemedText>
+                  <View
+                    style={{
+                      flexDirection: "column",
+                      alignItems: "center",
+                      justifyContent: "center",
+                    }}
+                  >
+                    {selectedMood && (
+                      <Image
+                        source={selectedMood.image}
+                        style={styles.tooltipImage}
+                      />
                     )}
-                  </>
+                    <ThemedText
+                      style={[styles.barTooltipText, { marginLeft: 8 }]}
+                    >
+                      Found in {count} entries
+                    </ThemedText>
+                  </View>
                 )
               })()}
             </View>
@@ -1081,6 +1089,7 @@ export default function TrendsScreen({ isDevView }: { isDevView?: boolean }) {
                   }
                   setTimeRange(range)
                   setSelectedBarIndex(null)
+                  setSelectedMoodType(null)
                   setChartOffset(0)
                 }}
               >
@@ -1524,8 +1533,8 @@ export default function TrendsScreen({ isDevView }: { isDevView?: boolean }) {
                           </View>
                         </ScrollView>
                       ) : (
-                        entry.mood ||
-                        (entry.moods && entry.moods.length == 1 && (
+                        (entry.mood ||
+                          (entry.moods && entry.moods.length == 1)) && (
                           <Image
                             key={
                               getMoodOption(entry.mood || entry.moods![0]).type
@@ -1535,7 +1544,7 @@ export default function TrendsScreen({ isDevView }: { isDevView?: boolean }) {
                             }
                             style={styles.entryImage}
                           />
-                        ))
+                        )
                       )}
                       <ThemedText style={styles.entryDate}>
                         {new Date(entry.date).toLocaleDateString("en-US", {
@@ -2361,8 +2370,8 @@ const styles = StyleSheet.create({
     gap: 0,
   },
   tooltipImage: {
-    width: 18,
-    height: 18,
+    width: 32,
+    height: 32,
     resizeMode: "contain",
   },
   distributionLabel: {

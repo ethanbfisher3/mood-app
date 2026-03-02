@@ -19,12 +19,9 @@ export type MoodType =
 
 export interface MoodEntry {
   id: string
-  // Single legacy mood (kept for backward compatibility)
-  mood?: MoodType
-  // New: allow multiple moods per entry
-  moods?: MoodType[]
+  moods: MoodType[]
   date: string // ISO date string
-  time?: string // HH:MM format, for multi-mood tracking
+  time: string // HH:MM format, for multi-mood tracking
   note?: string
 }
 
