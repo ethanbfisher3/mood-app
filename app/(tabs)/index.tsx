@@ -2,6 +2,7 @@ import Ionicons from "@expo/vector-icons/Ionicons"
 import { useRouter } from "expo-router"
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import {
+  ActivityIndicator,
   Alert,
   Image,
   Keyboard,
@@ -21,6 +22,7 @@ import { Swipeable } from "react-native-gesture-handler"
 import { EntryCard } from "@/components/entry-card"
 import { ThemedText } from "@/components/themed-text"
 import { ThemedView } from "@/components/themed-view"
+import { TutorialTarget } from "@/components/tutorial/tutorial-target"
 import {
   getMoodOption,
   MOOD_OPTIONS,
@@ -28,6 +30,7 @@ import {
   MoodType,
 } from "@/constants/moods"
 import { useMoodStorage } from "@/hooks/use-mood-storage"
+import { useOnboardingTutorial } from "@/hooks/use-onboarding-tutorial"
 import { PRO_FEATURES, useProSubscription } from "@/hooks/use-pro-subscription"
 import { useThemeColor } from "@/hooks/use-theme-color"
 import { computeMoodDistribution } from "@/lib/mood-distribution"
@@ -62,8 +65,18 @@ export default function TrendsScreen({ isDevView }: { isDevView?: boolean }) {
   const [devDate, setDevDate] = useState("")
   const [editingEntryId, setEditingEntryId] = useState<string | null>(null)
   const [upgradeModalVisible, setUpgradeModalVisible] = useState(false)
+  const { setUpgradeHandler, isActive, currentStep, startProTutorial, measureTarget } =
+    useOnboardingTutorial()
 
-  const { isPro } = useProSubscription()
+  const {
+    isPro,
+    buyPro,
+    restorePurchases,
+    purchaseLoading,
+    purchaseError,
+    mockIapEnabled,
+    toggleMockIapMode,
+  } = useProSubscription()
 
   const backgroundColor = useThemeColor({}, "background")
   const textColor = useThemeColor({}, "text")
@@ -73,7 +86,16 @@ export default function TrendsScreen({ isDevView }: { isDevView?: boolean }) {
   const rightGridScrollRef = useRef<ScrollView | null>(null)
   const rightHorizontalRef = useRef<ScrollView | null>(null)
   const labelScrollRef = useRef<ScrollView | null>(null)
+  const mainScrollRef = useRef<ScrollView | null>(null)
+  const currentMainScrollYRef = useRef(0)
   const isSyncingScroll = useRef(false)
+  const previousIsProRef = useRef(isPro)
+  const [chartSectionY, setChartSectionY] = useState<number>(0)
+  const [yearViewSectionY, setYearViewSectionY] = useState<number>(0)
+  const [distributionSectionY, setDistributionSectionY] = useState<number>(0)
+  const [advancedAnalyticsSectionY, setAdvancedAnalyticsSectionY] = useState(0)
+  const [moodInsightsSectionY, setMoodInsightsSectionY] = useState(0)
+  const [multiEntriesSectionY, setMultiEntriesSectionY] = useState(0)
 
   const onLeftGridScroll = (e: any) => {
     if (isSyncingScroll.current) {
@@ -111,6 +133,131 @@ export default function TrendsScreen({ isDevView }: { isDevView?: boolean }) {
       hideSub.remove()
     }
   }, [])
+
+  useEffect(() => {
+    setUpgradeHandler(() => setUpgradeModalVisible(true))
+    return () => setUpgradeHandler(null)
+  }, [setUpgradeHandler])
+
+  useEffect(() => {
+    if (isPro && !previousIsProRef.current) {
+      void startProTutorial()
+    }
+    previousIsProRef.current = isPro
+  }, [isPro, startProTutorial])
+
+  useEffect(() => {
+    if (!isActive || !currentStep) {
+      return
+    }
+
+    const scrollTo = (y: number) => {
+      mainScrollRef.current?.scrollTo({
+        y: Math.max(y - 16, 0),
+        animated: true,
+      })
+    }
+
+    const scrollToTarget = async (
+      targetId:
+        | "mood-chart"
+        | "year-view"
+        | "mood-distribution"
+        | "advanced-analytics"
+        | "mood-insights"
+        | "multi-entries",
+      fallbackY: number,
+    ) => {
+      const rect = await measureTarget(targetId)
+      if (rect) {
+        const absoluteY = currentMainScrollYRef.current + rect.y
+        scrollTo(absoluteY)
+        return
+      }
+      scrollTo(fallbackY)
+    }
+
+    if (currentStep.id === "step-mood-chart") {
+      void scrollToTarget("mood-chart", chartSectionY)
+      const timer = setTimeout(
+        () => void scrollToTarget("mood-chart", chartSectionY),
+        260,
+      )
+      return () => clearTimeout(timer)
+    }
+
+    if (currentStep.id === "pro-step-year-view") {
+      if (timeRange !== "year") {
+        setTimeRange("year")
+      }
+      void scrollToTarget("year-view", yearViewSectionY)
+      const timer = setTimeout(
+        () => void scrollToTarget("year-view", yearViewSectionY),
+        320,
+      )
+      return () => clearTimeout(timer)
+    }
+
+    if (
+      currentStep.id === "step-distribution" ||
+      currentStep.id === "pro-step-distribution"
+    ) {
+      void scrollToTarget("mood-distribution", distributionSectionY)
+      const timer = setTimeout(
+        () => void scrollToTarget("mood-distribution", distributionSectionY),
+        320,
+      )
+      return () => clearTimeout(timer)
+    }
+
+    if (currentStep.id === "step-pro-modal") {
+      mainScrollRef.current?.scrollToEnd({ animated: true })
+      const timer = setTimeout(
+        () => mainScrollRef.current?.scrollToEnd({ animated: true }),
+        220,
+      )
+      return () => clearTimeout(timer)
+    }
+
+    if (currentStep.id === "pro-step-advanced-analytics") {
+      void scrollToTarget("advanced-analytics", advancedAnalyticsSectionY)
+      const timer = setTimeout(
+        () =>
+          void scrollToTarget("advanced-analytics", advancedAnalyticsSectionY),
+        320,
+      )
+      return () => clearTimeout(timer)
+    }
+
+    if (currentStep.id === "pro-step-mood-insights") {
+      void scrollToTarget("mood-insights", moodInsightsSectionY)
+      const timer = setTimeout(
+        () => void scrollToTarget("mood-insights", moodInsightsSectionY),
+        320,
+      )
+      return () => clearTimeout(timer)
+    }
+
+    if (currentStep.id === "pro-step-multiple-entries") {
+      void scrollToTarget("multi-entries", multiEntriesSectionY)
+      const timer = setTimeout(
+        () => void scrollToTarget("multi-entries", multiEntriesSectionY),
+        260,
+      )
+      return () => clearTimeout(timer)
+    }
+  }, [
+    isActive,
+    currentStep,
+    chartSectionY,
+    yearViewSectionY,
+    distributionSectionY,
+    advancedAnalyticsSectionY,
+    moodInsightsSectionY,
+    multiEntriesSectionY,
+    timeRange,
+    measureTarget,
+  ])
 
   // Load today's mood when modal opens
   const openMoodModal = useCallback(() => {
@@ -357,7 +504,7 @@ export default function TrendsScreen({ isDevView }: { isDevView?: boolean }) {
     }
   }, [entries])
 
-  // AI Mood Insights (Pro feature)
+  // Mood Insights (Pro feature)
   const insights = useMemo(() => {
     const result: { emoji: string; text: string }[] = []
     if (entries.length < 3) return result
@@ -409,6 +556,26 @@ export default function TrendsScreen({ isDevView }: { isDevView?: boolean }) {
 
     return result.slice(0, 4) // Max 4 insights
   }, [entries, stats, advancedStats])
+
+  const fullMoodDistribution = useMemo(() => {
+    const byMood = new Map(
+      advancedStats.moodDistribution.map((item) => [item.mood, item]),
+    )
+
+    return MOOD_OPTIONS.map((mood) => {
+      const existing = byMood.get(mood.type)
+      return {
+        mood: mood.type,
+        count: existing?.count ?? 0,
+        percentage: existing?.percentage ?? 0,
+      }
+    }).sort((a, b) => {
+      if (b.count !== a.count) {
+        return b.count - a.count
+      }
+      return MOOD_OPTIONS.findIndex((m) => m.type === a.mood) - MOOD_OPTIONS.findIndex((m) => m.type === b.mood)
+    })
+  }, [advancedStats.moodDistribution])
 
   // Export mood data as CSV
   const handleExportCSV = useCallback(async () => {
@@ -1034,9 +1201,22 @@ export default function TrendsScreen({ isDevView }: { isDevView?: boolean }) {
     </Modal>
   )
 
+  useEffect(() => {
+    if (isPro && upgradeModalVisible) {
+      setUpgradeModalVisible(false)
+    }
+  }, [isPro, upgradeModalVisible])
+
   return (
     <View style={[styles.container, { backgroundColor }]}>
-      <ScrollView contentContainerStyle={styles.scrollContent}>
+      <ScrollView
+        ref={mainScrollRef}
+        contentContainerStyle={styles.scrollContent}
+        onScroll={(event) => {
+          currentMainScrollYRef.current = event.nativeEvent.contentOffset.y
+        }}
+        scrollEventThrottle={16}
+      >
         <ThemedView style={styles.header}>
           <ThemedText type="title">Mood Trends</ThemedText>
           <ThemedText type="default" style={{ marginTop: 4 }}>
@@ -1050,50 +1230,70 @@ export default function TrendsScreen({ isDevView }: { isDevView?: boolean }) {
         </ThemedView>
 
         {/* Time Range Buttons */}
-        <ThemedView style={styles.rangeButtonsContainer}>
-          {(["week", "month", "year"] as TimeRange[]).map((range) => {
-            const isDisabled = range === "year" && !isPro
-            return (
-              <TouchableOpacity
-                key={range}
-                style={[
-                  styles.rangeButton,
-                  timeRange === range && styles.rangeButtonActive,
-                ]}
-                onPress={() => {
-                  if (isDisabled) {
-                    setUpgradeModalVisible(true)
-                    return
-                  }
-                  setTimeRange(range)
-                  setSelectedBarIndex(null)
-                  setSelectedMoodType(null)
-                  setChartOffset(0)
-                }}
-              >
-                <ThemedText style={[styles.rangeButtonText]}>
-                  {rangeConfig[range].label}
-                </ThemedText>
-                {isDisabled ? (
-                  <Image
-                    source={require("@/assets/images/app_emoji/locked.png")}
-                    style={styles.lockedImage}
-                  />
-                ) : null}
-              </TouchableOpacity>
-            )
-          })}
-        </ThemedView>
+        <TutorialTarget
+          id="year-view"
+          onLayout={(event) => {
+            setYearViewSectionY(event.nativeEvent.layout.y)
+          }}
+        >
+          <ThemedView style={styles.rangeButtonsContainer}>
+            {(["week", "month", "year"] as TimeRange[]).map((range) => {
+              const isDisabled = range === "year" && !isPro
+              return (
+                <TouchableOpacity
+                  key={range}
+                  style={[
+                    styles.rangeButton,
+                    timeRange === range && styles.rangeButtonActive,
+                  ]}
+                  onPress={() => {
+                    if (isDisabled) {
+                      setUpgradeModalVisible(true)
+                      return
+                    }
+                    setTimeRange(range)
+                    setSelectedBarIndex(null)
+                    setSelectedMoodType(null)
+                    setChartOffset(0)
+                  }}
+                >
+                  <ThemedText style={[styles.rangeButtonText]}>
+                    {rangeConfig[range].label}
+                  </ThemedText>
+                  {isDisabled ? (
+                    <Image
+                      source={require("@/assets/images/app_emoji/locked.png")}
+                      style={styles.lockedImage}
+                    />
+                  ) : null}
+                </TouchableOpacity>
+              )
+            })}
+          </ThemedView>
+        </TutorialTarget>
 
         {/* Chart */}
-        {renderSimpleChart()}
+        <TutorialTarget
+          id="mood-chart"
+          onLayout={(event) => {
+            setChartSectionY(event.nativeEvent.layout.y)
+          }}
+        >
+          {renderSimpleChart()}
+        </TutorialTarget>
 
         {/* Today's Mood Button */}
-        {isPro && todaysMoods.length > 0 ? (
+        <TutorialTarget
+          id="multi-entries"
+          onLayout={(event) => {
+            setMultiEntriesSectionY(event.nativeEvent.layout.y)
+          }}
+        >
+          {isPro && (
           <ThemedView style={styles.todayMoodMultiContainer}>
             <View style={styles.todayMoodMultiHeader}>
               <ThemedText style={styles.todayMoodMultiTitle}>
-                Today's Moods
+                Today&apos;s Moods
               </ThemedText>
               <ThemedText style={styles.todayMoodMultiCount}>
                 {todaysMoods.length}{" "}
@@ -1183,60 +1383,8 @@ export default function TrendsScreen({ isDevView }: { isDevView?: boolean }) {
               </ThemedText>
             </TouchableOpacity>
           </ThemedView>
-        ) : (
-          <TouchableOpacity
-            style={[
-              styles.todayMoodButton,
-              todaysMood &&
-                (() => {
-                  const m = todaysMood.moods[0] ?? MOOD_OPTIONS[2].type
-                  return {
-                    borderColor: getMoodOption(m).color,
-                    backgroundColor: getMoodOption(m).color + "15",
-                  }
-                })(),
-            ]}
-            onPress={openMoodModal}
-            activeOpacity={0.7}
-          >
-            {todaysMood ? (
-              <View style={styles.todayMoodContent}>
-                {(() => {
-                  const m = todaysMood.moods[0] ?? MOOD_OPTIONS[2].type
-                  return (
-                    <Image
-                      source={getMoodOption(m).image}
-                      style={styles.todayMoodEmojiImage}
-                    />
-                  )
-                })()}
-                <View style={styles.todayMoodTextContainer}>
-                  <ThemedText style={styles.todayMoodLabel}>
-                    Today's Mood
-                  </ThemedText>
-                  <ThemedText style={styles.todayMoodValue}>
-                    {(() =>
-                      getMoodOption(todaysMood.moods[0] ?? MOOD_OPTIONS[2].type)
-                        .label)()}
-                  </ThemedText>
-                </View>
-                <ThemedText style={styles.todayMoodEdit}>Edit</ThemedText>
-              </View>
-            ) : (
-              <View style={styles.todayMoodContent}>
-                <ThemedText style={styles.todayMoodEmoji}>+</ThemedText>
-                <View style={styles.todayMoodTextContainer}>
-                  <ThemedText style={styles.todayMoodLabel}>
-                    Log Today's Mood
-                  </ThemedText>
-                  <ThemedText style={styles.todayMoodSubtext}>
-                    Tap to record how you're feeling
-                  </ThemedText>
-                </View>
-              </View>
-            )}
-          </TouchableOpacity>
-        )}
+          ) }
+        </TutorialTarget>
 
         {/* Stats - Pro feature */}
         {isPro ? (
@@ -1275,14 +1423,21 @@ export default function TrendsScreen({ isDevView }: { isDevView?: boolean }) {
             </View>
 
             {/* Mood Distribution */}
-            {advancedStats.moodDistribution.length > 0 && (
-              <View style={styles.analyticsSection}>
+            {(fullMoodDistribution.length > 0 ||
+              currentStep?.id === "pro-step-distribution") && (
+              <TutorialTarget
+                id="mood-distribution"
+                onLayout={(event) => {
+                  setDistributionSectionY(event.nativeEvent.layout.y)
+                }}
+              >
+                <View style={styles.analyticsSection}>
                 <View style={styles.analyticsSectionTitleContainer}>
                   <ThemedText style={styles.analyticsSectionTitle}>
                     Mood Distribution
                   </ThemedText>
 
-                  {advancedStats.moodDistribution.length > 5 && (
+                  {fullMoodDistribution.length > 5 && (
                     <TouchableOpacity
                       onPress={() => router.push({ pathname: "/distribution" })}
                     >
@@ -1292,124 +1447,151 @@ export default function TrendsScreen({ isDevView }: { isDevView?: boolean }) {
                     </TouchableOpacity>
                   )}
                 </View>
-                {advancedStats.moodDistribution.slice(0, 5).map((item) => {
-                  const mood = getMoodOption(item.mood)
-                  return (
-                    <View key={item.mood} style={styles.distributionRow}>
-                      <Image
-                        source={mood.image}
-                        style={styles.distributionImage}
-                      />
-                      <View style={styles.distributionBarContainer}>
-                        <View
-                          style={[
-                            styles.distributionBar,
-                            {
-                              width: `${Math.max(item.percentage, 2)}%`,
-                              backgroundColor: mood.color,
-                            },
-                          ]}
+                {fullMoodDistribution.length > 0 ? (
+                  fullMoodDistribution.slice(0, 5).map((item) => {
+                    const mood = getMoodOption(item.mood)
+                    return (
+                      <View key={item.mood} style={styles.distributionRow}>
+                        <Image
+                          source={mood.image}
+                          style={styles.distributionImage}
                         />
+                        <View style={styles.distributionBarContainer}>
+                          <View
+                            style={[
+                              styles.distributionBar,
+                              {
+                                width: `${item.percentage}%`,
+                                backgroundColor: mood.color,
+                              },
+                            ]}
+                          />
+                        </View>
+                        <ThemedText style={styles.distributionPercent}>
+                          {Math.round(item.percentage)}%
+                        </ThemedText>
                       </View>
-                      <ThemedText style={styles.distributionPercent}>
-                        {Math.round(item.percentage)}%
-                      </ThemedText>
-                    </View>
-                  )
-                })}
+                    )
+                  })
+                ) : (
+                  <ThemedText style={styles.emptySubtext}>
+                    Log more entries to populate your mood distribution.
+                  </ThemedText>
+                )}
               </View>
+              </TutorialTarget>
             )}
 
             {/* Additional Analytics */}
-            <View style={styles.analyticsSection}>
-              <ThemedText
-                style={{ ...styles.analyticsSectionTitle, marginBottom: 8 }}
-              >
-                Deep Insights
-              </ThemedText>
-              <View style={styles.analyticsGrid}>
-                {advancedStats.bestDayOfWeek && (
-                  <ThemedView style={styles.analyticsCard}>
-                    <Image
-                      source={require("@/assets/images/app_emoji/best.png")}
-                      style={styles.analyticsCardEmoji}
-                    />
-                    <ThemedText style={styles.analyticsCardLabel}>
-                      Best Day
-                    </ThemedText>
-                    <ThemedText style={styles.analyticsCardValue}>
-                      {advancedStats.bestDayOfWeek}
-                    </ThemedText>
-                  </ThemedView>
-                )}
-                {advancedStats.worstDayOfWeek && (
-                  <ThemedView style={styles.analyticsCard}>
-                    <Image
-                      source={require("@/assets/images/app_emoji/stressed.png")}
-                      style={styles.analyticsCardEmoji}
-                    />
-                    <ThemedText style={styles.analyticsCardLabel}>
-                      Hardest Day
-                    </ThemedText>
-                    <ThemedText style={styles.analyticsCardValue}>
-                      {advancedStats.worstDayOfWeek}
-                    </ThemedText>
-                  </ThemedView>
-                )}
-                <ThemedView style={styles.analyticsCard}>
-                  <Image
-                    source={require("@/assets/images/app_emoji/streak.png")}
-                    style={styles.analyticsCardEmoji}
-                  />
-                  <ThemedText style={styles.analyticsCardLabel}>
-                    Best Streak
-                  </ThemedText>
-                  <ThemedText style={styles.analyticsCardValue}>
-                    {advancedStats.longestStreak}{" "}
-                    {advancedStats.longestStreak === 1 ? "day" : "days"}
-                  </ThemedText>
-                </ThemedView>
-                <ThemedView style={styles.analyticsCard}>
-                  <Image
-                    source={require("@/assets/images/app_emoji/numbers.png")}
-                    style={styles.analyticsCardEmoji}
-                  />
-                  <ThemedText style={styles.analyticsCardLabel}>
-                    Total Entries
-                  </ThemedText>
-                  <ThemedText style={styles.analyticsCardValue}>
-                    {advancedStats.totalEntries}
-                  </ThemedText>
-                </ThemedView>
-              </View>
-            </View>
-
-            {/* AI Mood Insights */}
-            {insights.length > 0 && (
+            <TutorialTarget
+              id="advanced-analytics"
+              onLayout={(event) => {
+                setAdvancedAnalyticsSectionY(event.nativeEvent.layout.y)
+              }}
+            >
               <View style={styles.analyticsSection}>
                 <ThemedText
                   style={{ ...styles.analyticsSectionTitle, marginBottom: 8 }}
                 >
-                  Mood Insights
+                  Deep Insights
                 </ThemedText>
-                {insights.map((insight, index) => (
-                  <View key={index} style={styles.insightCard}>
-                    {typeof insight.emoji === "string" ? (
-                      <ThemedText style={styles.insightEmoji}>
-                        {insight.emoji}
-                      </ThemedText>
-                    ) : (
+                <View style={styles.analyticsGrid}>
+                  {advancedStats.bestDayOfWeek && (
+                    <ThemedView style={styles.analyticsCard}>
                       <Image
-                        source={insight.emoji}
-                        style={styles.insightEmojiImage}
+                        source={require("@/assets/images/app_emoji/best.png")}
+                        style={styles.analyticsCardEmoji}
                       />
-                    )}
-                    <ThemedText style={styles.insightText}>
-                      {insight.text}
+                      <ThemedText style={styles.analyticsCardLabel}>
+                        Best Day
+                      </ThemedText>
+                      <ThemedText style={styles.analyticsCardValue}>
+                        {advancedStats.bestDayOfWeek}
+                      </ThemedText>
+                    </ThemedView>
+                  )}
+                  {advancedStats.worstDayOfWeek && (
+                    <ThemedView style={styles.analyticsCard}>
+                      <Image
+                        source={require("@/assets/images/app_emoji/stressed.png")}
+                        style={styles.analyticsCardEmoji}
+                      />
+                      <ThemedText style={styles.analyticsCardLabel}>
+                        Hardest Day
+                      </ThemedText>
+                      <ThemedText style={styles.analyticsCardValue}>
+                        {advancedStats.worstDayOfWeek}
+                      </ThemedText>
+                    </ThemedView>
+                  )}
+                  <ThemedView style={styles.analyticsCard}>
+                    <Image
+                      source={require("@/assets/images/app_emoji/streak.png")}
+                      style={styles.analyticsCardEmoji}
+                    />
+                    <ThemedText style={styles.analyticsCardLabel}>
+                      Best Streak
                     </ThemedText>
-                  </View>
-                ))}
+                    <ThemedText style={styles.analyticsCardValue}>
+                      {advancedStats.longestStreak}{" "}
+                      {advancedStats.longestStreak === 1 ? "day" : "days"}
+                    </ThemedText>
+                  </ThemedView>
+                  <ThemedView style={styles.analyticsCard}>
+                    <Image
+                      source={require("@/assets/images/app_emoji/numbers.png")}
+                      style={styles.analyticsCardEmoji}
+                    />
+                    <ThemedText style={styles.analyticsCardLabel}>
+                      Total Entries
+                    </ThemedText>
+                    <ThemedText style={styles.analyticsCardValue}>
+                      {advancedStats.totalEntries}
+                    </ThemedText>
+                  </ThemedView>
+                </View>
               </View>
+            </TutorialTarget>
+
+            {/* Mood Insights */}
+            {(insights.length > 0 || currentStep?.id === "pro-step-mood-insights") && (
+              <TutorialTarget
+                id="mood-insights"
+                onLayout={(event) => {
+                  setMoodInsightsSectionY(event.nativeEvent.layout.y)
+                }}
+              >
+                <View style={styles.analyticsSection}>
+                  <ThemedText
+                    style={{ ...styles.analyticsSectionTitle, marginBottom: 8 }}
+                  >
+                    Mood Insights
+                  </ThemedText>
+                  {insights.length > 0 ? (
+                    insights.map((insight, index) => (
+                      <View key={index} style={styles.insightCard}>
+                        {typeof insight.emoji === "string" ? (
+                          <ThemedText style={styles.insightEmoji}>
+                            {insight.emoji}
+                          </ThemedText>
+                        ) : (
+                          <Image
+                            source={insight.emoji}
+                            style={styles.insightEmojiImage}
+                          />
+                        )}
+                        <ThemedText style={styles.insightText}>
+                          {insight.text}
+                        </ThemedText>
+                      </View>
+                    ))
+                  ) : (
+                    <ThemedText style={styles.emptySubtext}>
+                      Keep logging moods to unlock personalized insights.
+                    </ThemedText>
+                  )}
+                </View>
+              </TutorialTarget>
             )}
           </ThemedView>
         ) : (
@@ -1512,21 +1694,23 @@ export default function TrendsScreen({ isDevView }: { isDevView?: boolean }) {
 
         {/* Upgrade to Pro Button - only show if not pro */}
         {!isPro ? (
-          <TouchableOpacity
-            style={styles.upgradeButton}
-            onPress={() => setUpgradeModalVisible(true)}
-            activeOpacity={0.8}
-          >
-            <View style={styles.upgradeButtonTextContainer}>
-              <ThemedText style={styles.upgradeButtonTitle}>
-                Upgrade to Pro
-              </ThemedText>
-              <ThemedText style={styles.upgradeButtonSubtitle}>
-                Unlock Year view, Show all entries & more
-              </ThemedText>
-            </View>
-            <ThemedText style={styles.upgradeButtonArrow}>→</ThemedText>
-          </TouchableOpacity>
+          <TutorialTarget id="pro-section">
+            <TouchableOpacity
+              style={styles.upgradeButton}
+              onPress={() => setUpgradeModalVisible(true)}
+              activeOpacity={0.8}
+            >
+              <View style={styles.upgradeButtonTextContainer}>
+                <ThemedText style={styles.upgradeButtonTitle}>
+                  Upgrade to Pro
+                </ThemedText>
+                <ThemedText style={styles.upgradeButtonSubtitle}>
+                  Unlock Year view, Mood Distribution & more
+                </ThemedText>
+              </View>
+              <ThemedText style={styles.upgradeButtonArrow}>→</ThemedText>
+            </TouchableOpacity>
+          </TutorialTarget>
         ) : (
           <View style={styles.proBadge}>
             <ThemedText style={styles.proBadgeText}>
@@ -1601,31 +1785,68 @@ export default function TrendsScreen({ isDevView }: { isDevView?: boolean }) {
 
             <TouchableOpacity
               style={styles.subscribeButton}
-              onPress={() => {
-                // In a real app, this would trigger the in-app purchase flow
-                setUpgradeModalVisible(false)
-                Alert.alert(
-                  "Coming Soon",
-                  "In-app purchases will be available in a future update!",
-                )
+              onPress={async () => {
+                try {
+                  await buyPro()
+                } catch {
+                  Alert.alert(
+                    "Purchase Failed",
+                    "We couldn't complete your purchase. Please try again.",
+                  )
+                }
               }}
               activeOpacity={0.8}
+              disabled={purchaseLoading || isPro}
             >
-              <ThemedText style={styles.subscribeButtonText}>
-                Upgrade Now
-              </ThemedText>
+              {purchaseLoading ? (
+                <ActivityIndicator color="white" />
+              ) : (
+                <ThemedText style={styles.subscribeButtonText}>
+                  {isPro ? "You're Pro" : "Upgrade Now"}
+                </ThemedText>
+              )}
             </TouchableOpacity>
 
             <TouchableOpacity
               style={styles.restoreButton}
-              onPress={() => {
-                Alert.alert("Restore", "Checking for previous purchases...")
+              onPress={async () => {
+                try {
+                  await restorePurchases()
+                  Alert.alert(
+                    "Restore Complete",
+                    "Finished checking previous purchases.",
+                  )
+                } catch {
+                  Alert.alert(
+                    "Restore Failed",
+                    "Unable to restore purchases right now. Please try again.",
+                  )
+                }
               }}
+              disabled={purchaseLoading}
             >
               <ThemedText style={styles.restoreButtonText}>
-                Restore Purchase
+                {purchaseLoading ? "Restoring..." : "Restore Purchase"}
               </ThemedText>
             </TouchableOpacity>
+
+            {purchaseError ? (
+              <ThemedText style={styles.purchaseErrorText}>
+                {purchaseError}
+              </ThemedText>
+            ) : null}
+
+            {__DEV__ && (
+              <TouchableOpacity
+                style={styles.mockModeButton}
+                onPress={toggleMockIapMode}
+                disabled={purchaseLoading}
+              >
+                <ThemedText style={styles.mockModeButtonText}>
+                  Mock IAP Mode: {mockIapEnabled ? "ON" : "OFF"}
+                </ThemedText>
+              </TouchableOpacity>
+            )}
           </ThemedView>
         </View>
       </Modal>
@@ -2615,5 +2836,22 @@ const styles = StyleSheet.create({
   restoreButtonText: {
     fontSize: 14,
     opacity: 0.7,
+  },
+  purchaseErrorText: {
+    marginTop: 8,
+    textAlign: "center",
+    fontSize: 13,
+    color: "#FF6B6B",
+  },
+  mockModeButton: {
+    marginTop: 10,
+    alignItems: "center",
+    paddingVertical: 8,
+  },
+  mockModeButtonText: {
+    fontSize: 12,
+    opacity: 0.8,
+    color: "#687076",
+    fontWeight: "600",
   },
 })

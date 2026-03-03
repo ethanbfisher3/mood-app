@@ -1,10 +1,11 @@
 import { Stack } from "expo-router"
-import React, { useEffect, useMemo } from "react"
+import { useEffect, useMemo } from "react"
 import { Image, ScrollView, StyleSheet, View } from "react-native"
 
 import { ThemedText } from "@/components/themed-text"
 import { ThemedView } from "@/components/themed-view"
-import { getMoodOption } from "@/constants/moods"
+import { TutorialTarget } from "@/components/tutorial/tutorial-target"
+import { getMoodOption, MOOD_OPTIONS } from "@/constants/moods"
 import { useMoodStorage } from "@/hooks/use-mood-storage"
 import { useThemeColor } from "@/hooks/use-theme-color"
 import { computeMoodDistribution } from "@/lib/mood-distribution"
@@ -19,7 +20,22 @@ export default function DistributionScreen() {
   }, [reload])
 
   const moodDistribution = useMemo(() => {
-    return computeMoodDistribution(entries).sort((a, b) => b.count - a.count)
+    const computed = computeMoodDistribution(entries)
+    const byMood = new Map(computed.map((item) => [item.mood, item]))
+
+    return MOOD_OPTIONS.map((mood) => {
+      const existing = byMood.get(mood.type)
+      return {
+        mood: mood.type,
+        count: existing?.count ?? 0,
+        percentage: existing?.percentage ?? 0,
+      }
+    }).sort((a, b) => {
+      if (b.count !== a.count) {
+        return b.count - a.count
+      }
+      return MOOD_OPTIONS.findIndex((m) => m.type === a.mood) - MOOD_OPTIONS.findIndex((m) => m.type === b.mood)
+    })
   }, [entries])
 
   return (
@@ -28,38 +44,36 @@ export default function DistributionScreen() {
         options={{ title: "Mood Distribution", headerBackTitle: "Back" }}
       />
       <ScrollView contentContainerStyle={styles.scrollContent}>
-        <ThemedView style={styles.section}>
-          <ThemedText type="subtitle" style={styles.title}>
-            Mood Distribution
-          </ThemedText>
+        <TutorialTarget id="mood-distribution">
+          <ThemedView style={styles.section}>
+            <ThemedText type="subtitle" style={styles.title}>
+              Mood Distribution
+            </ThemedText>
 
-          {moodDistribution.length === 0 ? (
-            <ThemedText style={styles.emptyText}>No entries yet.</ThemedText>
-          ) : (
-            moodDistribution.map((item) => {
-              const mood = getMoodOption(item.mood)
-              return (
-                <View key={item.mood} style={styles.distributionRow}>
-                  <Image source={mood.image} style={styles.distributionImage} />
-                  <View style={styles.distributionBarContainer}>
-                    <View
-                      style={[
-                        styles.distributionBar,
-                        {
-                          width: `${Math.max(item.percentage, 2)}%`,
-                          backgroundColor: mood.color,
-                        },
-                      ]}
-                    />
+              {moodDistribution.map((item) => {
+                const mood = getMoodOption(item.mood)
+                return (
+                  <View key={item.mood} style={styles.distributionRow}>
+                    <Image source={mood.image} style={styles.distributionImage} />
+                    <View style={styles.distributionBarContainer}>
+                      <View
+                        style={[
+                          styles.distributionBar,
+                          {
+                            width: `${item.percentage}%`,
+                            backgroundColor: mood.color,
+                          },
+                        ]}
+                      />
+                    </View>
+                    <ThemedText style={styles.distributionPercent}>
+                      {Math.round(item.percentage)}%
+                    </ThemedText>
                   </View>
-                  <ThemedText style={styles.distributionPercent}>
-                    {Math.round(item.percentage)}%
-                  </ThemedText>
-                </View>
-              )
-            })
-          )}
-        </ThemedView>
+                )
+              })}
+          </ThemedView>
+        </TutorialTarget>
       </ScrollView>
     </View>
   )
@@ -97,5 +111,4 @@ const styles = StyleSheet.create({
     width: 56,
     textAlign: "right",
   },
-  emptyText: { opacity: 0.7 },
 })

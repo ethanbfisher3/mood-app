@@ -15,7 +15,9 @@ import { useEffect, useState } from "react"
 import { GestureHandlerRootView } from "react-native-gesture-handler"
 import "react-native-reanimated"
 
-import { useProSubscription } from "@/hooks/use-pro-subscription"
+import { TutorialOverlay } from "@/components/tutorial/tutorial-overlay"
+import { OnboardingTutorialProvider } from "@/hooks/use-onboarding-tutorial"
+import { ProProvider } from "@/hooks/use-pro-subscription"
 import {
   StyleSheet,
   Text,
@@ -37,7 +39,6 @@ Notifications.setNotificationHandler({
 export default function RootLayout() {
   const colorScheme = useColorScheme()
   const [isDevView, setIsDevView] = useState(true)
-  const { isPro, togglePro } = useProSubscription()
 
   // Set the root background color to match the app background
   useEffect(() => {
@@ -70,46 +71,37 @@ export default function RootLayout() {
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <ThemeProvider value={colorScheme === "dark" ? DarkTheme : DefaultTheme}>
-        <Stack>
-          <Stack.Screen
-            name="(tabs)"
-            options={{ headerShown: false, isDevView }}
-          />
-          <Stack.Screen
-            name="modal"
-            options={{ presentation: "modal", title: "Modal" }}
-          />
-        </Stack>
-        <StatusBar style="auto" />
+        <ProProvider>
+          <OnboardingTutorialProvider>
+            <Stack>
+              <Stack.Screen
+                name="(tabs)"
+                options={{ headerShown: false, isDevView }}
+              />
+              <Stack.Screen
+                name="modal"
+                options={{ presentation: "modal", title: "Modal" }}
+              />
+            </Stack>
+            <StatusBar style="auto" />
+            <TutorialOverlay />
 
-        {/* Dev-only Pro Toggle Button */}
-        {__DEV__ && (
-          <TouchableOpacity
-            style={[styles.devViewToggleButton, styles.devProToggleButton]}
-            onPress={async () => {
-              await togglePro()
-            }}
-          >
-            <Text style={styles.devViewToggleText}>
-              {isPro ? "Disable Pro" : "Enable Pro"}
-            </Text>
-          </TouchableOpacity>
-        )}
-
-        {/* Dev/Prod View Toggle Button */}
-        {__DEV__ && (
-          <TouchableOpacity
-            style={[
-              styles.devViewToggleButton,
-              !isDevView && styles.devViewToggleProd,
-            ]}
-            onPress={() => setIsDevView((v) => !v)}
-          >
-            <Text style={styles.devViewToggleText}>
-              {isDevView ? "DEV" : "PROD"}
-            </Text>
-          </TouchableOpacity>
-        )}
+            {/* Dev/Prod View Toggle Button */}
+            {__DEV__ && (
+              <TouchableOpacity
+                style={[
+                  styles.devViewToggleButton,
+                  !isDevView && styles.devViewToggleProd,
+                ]}
+                onPress={() => setIsDevView((v) => !v)}
+              >
+                <Text style={styles.devViewToggleText}>
+                  {isDevView ? "DEV" : "PROD"}
+                </Text>
+              </TouchableOpacity>
+            )}
+          </OnboardingTutorialProvider>
+        </ProProvider>
       </ThemeProvider>
     </GestureHandlerRootView>
   )
@@ -137,10 +129,6 @@ const styles = StyleSheet.create({
   },
   devViewToggleProd: {
     backgroundColor: "#4CAF50",
-  },
-  devProToggleButton: {
-    bottom: 120,
-    backgroundColor: "#9C27B0",
   },
   devViewToggleText: {
     color: "white",

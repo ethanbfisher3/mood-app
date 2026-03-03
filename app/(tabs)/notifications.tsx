@@ -1,6 +1,6 @@
 import DateTimePicker from "@react-native-community/datetimepicker"
 import * as Notifications from "expo-notifications"
-import { useEffect, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import {
   Alert,
   Platform,
@@ -13,7 +13,9 @@ import {
 
 import { ThemedText } from "@/components/themed-text"
 import { ThemedView } from "@/components/themed-view"
+import { TutorialTarget } from "@/components/tutorial/tutorial-target"
 import { useNotificationSettings } from "@/hooks/use-notification-settings"
+import { useOnboardingTutorial } from "@/hooks/use-onboarding-tutorial"
 import { useProSubscription } from "@/hooks/use-pro-subscription"
 import { useThemeColor } from "@/hooks/use-theme-color"
 import {
@@ -42,6 +44,8 @@ export default function NotificationsScreen({
   } = useNotificationSettings()
 
   const { isPro } = useProSubscription()
+  const { startTutorial, startProTutorial, isActive, currentStep } =
+    useOnboardingTutorial()
 
   const [editingReminderId, setEditingReminderId] = useState<string | null>(
     null,
@@ -49,9 +53,12 @@ export default function NotificationsScreen({
   const [pendingNewTime, setPendingNewTime] = useState<Date>(new Date())
   const [pendingEditTime, setPendingEditTime] = useState<Date>(new Date())
   const [isSaving, setIsSaving] = useState(false)
+  const [notificationsHeaderY, setNotificationsHeaderY] = useState<number>(0)
+  const [addReminderY, setAddReminderY] = useState<number>(0)
 
   const backgroundColor = useThemeColor({}, "background")
   const textColor = useThemeColor({}, "text")
+  const notificationsScrollRef = useRef<ScrollView | null>(null)
 
   // Reload settings when component mounts
   useEffect(() => {
@@ -154,6 +161,43 @@ export default function NotificationsScreen({
 
   const selectedTime = new Date()
   selectedTime.setHours(settings.hour, settings.minute, 0, 0)
+  const isAddReminderStep =
+    isActive &&
+    (currentStep?.id === "step-add-notification" ||
+      currentStep?.id === "pro-step-multiple-reminders")
+
+  useEffect(() => {
+    if (!isActive || !currentStep) {
+      return
+    }
+
+    const scrollTo = (y: number) => {
+      notificationsScrollRef.current?.scrollTo({
+        y: Math.max(y - 16, 0),
+        animated: true,
+      })
+    }
+
+    if (currentStep.id === "step-notifications") {
+      scrollTo(notificationsHeaderY)
+      const timer = setTimeout(() => scrollTo(notificationsHeaderY), 220)
+      return () => clearTimeout(timer)
+    }
+
+    if (
+      currentStep.id === "step-add-notification" ||
+      currentStep.id === "pro-step-multiple-reminders"
+    ) {
+      scrollTo(addReminderY)
+      const timer = setTimeout(() => scrollTo(addReminderY), 220)
+      return () => clearTimeout(timer)
+    }
+  }, [
+    isActive,
+    currentStep,
+    notificationsHeaderY,
+    addReminderY,
+  ])
 
   if (loading) {
     return (
@@ -167,13 +211,23 @@ export default function NotificationsScreen({
 
   return (
     <View style={[styles.container, { backgroundColor }]}>
-      <ScrollView contentContainerStyle={styles.scrollContent}>
-        <ThemedView style={styles.header}>
-          <ThemedText type="title">Notifications</ThemedText>
-          <ThemedText style={styles.subtitle}>
-            Set up daily reminders to track your mood
-          </ThemedText>
-        </ThemedView>
+      <ScrollView
+        ref={notificationsScrollRef}
+        contentContainerStyle={styles.scrollContent}
+      >
+        <TutorialTarget
+          id="notifications-page"
+          onLayout={(event) => {
+            setNotificationsHeaderY(event.nativeEvent.layout.y)
+          }}
+        >
+          <ThemedView style={styles.header}>
+            <ThemedText type="title">Notifications</ThemedText>
+            <ThemedText style={styles.subtitle}>
+              Set up daily reminders to track your mood
+            </ThemedText>
+          </ThemedView>
+        </TutorialTarget>
 
         {/* Main Toggle */}
         <ThemedView style={styles.settingCard}>
@@ -332,22 +386,31 @@ export default function NotificationsScreen({
 
           {/* Add Reminder Button */}
           {(isPro || reminders.length == 0) &&
-            settings.enabled &&
+            (settings.enabled || isAddReminderStep) &&
             reminders.length < 3 &&
             editingReminderId !== "new" && (
-              <TouchableOpacity
-                style={styles.addReminderButton}
-                onPress={() =>
-                  setEditingReminderId((prev) =>
-                    prev === "new" ? null : "new",
-                  )
-                }
-                disabled={isSaving}
+              <TutorialTarget
+                id="add-notification"
+                onLayout={(event) => {
+                  setAddReminderY(event.nativeEvent.layout.y)
+                }}
               >
-                <ThemedText style={styles.addReminderText}>
-                  + Add Reminder
-                </ThemedText>
-              </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.addReminderButton}
+                  onPress={() =>
+                    setEditingReminderId((prev) =>
+                      prev === "new" ? null : "new",
+                    )
+                  }
+                  disabled={isSaving || !settings.enabled}
+                  accessibilityRole="button"
+                  accessibilityLabel="Add Notification"
+                >
+                  <ThemedText style={styles.addReminderText}>
+                    + Add Reminder
+                  </ThemedText>
+                </TouchableOpacity>
+              </TutorialTarget>
             )}
 
           {editingReminderId === "new" && (
@@ -388,14 +451,17 @@ export default function NotificationsScreen({
             Your Mood, On Time
           </ThemedText>
           <ThemedText style={styles.infoText}>
-            • You'll receive a notification at your chosen time each day
+            • You&apos;ll receive a notification at your chosen time each day
           </ThemedText>
           <ThemedText style={styles.infoText}>
             • Expand the notification to quickly log your mood or tap the
             notification to open the app and add notes
           </ThemedText>
           <ThemedText style={styles.infoText}>
-            • Consistent tracking helps you understand your mood patterns
+            • Reflecting on your day helps with emotional awareness
+          </ThemedText>
+          <ThemedText style={styles.infoText}>
+            • Even a quick mood check without notes is valuable
           </ThemedText>
         </ThemedView>
 
@@ -470,23 +536,34 @@ export default function NotificationsScreen({
           </ThemedView>
         )}
 
-        {/* Tips */}
-        <ThemedView style={styles.tipsSection}>
-          <ThemedText type="subtitle" style={styles.tipsTitle}>
-            Tips
+        <ThemedView style={styles.settingCard}>
+          <ThemedText style={styles.settingTitle}>Tutorial</ThemedText>
+          <ThemedText style={styles.settingDescription}>
+            Replay the onboarding walkthrough anytime.
           </ThemedText>
-          <ThemedText style={styles.tipText}>
-            • Choose a time when you're usually winding down, like nighttime
-          </ThemedText>
-          <ThemedText style={styles.tipText}>
-            • Swipe down to expand the notification and see mood options
-          </ThemedText>
-          <ThemedText style={styles.tipText}>
-            • Reflecting on your day helps with emotional awareness
-          </ThemedText>
-          <ThemedText style={styles.tipText}>
-            • Even a quick mood check without notes is valuable
-          </ThemedText>
+          <TouchableOpacity
+            style={styles.replayTutorialButton}
+            onPress={() => startTutorial(true)}
+            accessibilityRole="button"
+            accessibilityLabel="Replay onboarding tutorial"
+          >
+            <ThemedText style={styles.replayTutorialText}>
+              Replay Tutorial
+            </ThemedText>
+          </TouchableOpacity>
+
+          {isPro && (
+            <TouchableOpacity
+              style={styles.replayTutorialButton}
+              onPress={() => startProTutorial(true)}
+              accessibilityRole="button"
+              accessibilityLabel="Replay pro tutorial"
+            >
+              <ThemedText style={styles.replayTutorialText}>
+                Replay Pro Tutorial
+              </ThemedText>
+            </TouchableOpacity>
+          )}
         </ThemedView>
       </ScrollView>
     </View>
@@ -630,12 +707,6 @@ const styles = StyleSheet.create({
   tipsTitle: {
     marginBottom: 12,
   },
-  tipText: {
-    fontSize: 14,
-    opacity: 0.8,
-    marginBottom: 8,
-    lineHeight: 20,
-  },
   removeReminderButton: {
     padding: 8,
   },
@@ -685,5 +756,18 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     fontSize: 14,
     opacity: 0.7,
+  },
+  replayTutorialButton: {
+    marginTop: 12,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: "#4CAF50",
+    alignItems: "center",
+    paddingVertical: 10,
+  },
+  replayTutorialText: {
+    color: "#4CAF50",
+    fontWeight: "700",
+    fontSize: 14,
   },
 })
