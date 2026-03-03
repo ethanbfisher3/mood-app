@@ -18,6 +18,7 @@ import {
 import { Calendar } from "react-native-calendars"
 import { Swipeable } from "react-native-gesture-handler"
 
+import { EntryCard } from "@/components/entry-card"
 import { ThemedText } from "@/components/themed-text"
 import { ThemedView } from "@/components/themed-view"
 import {
@@ -1457,61 +1458,6 @@ export default function TrendsScreen({ isDevView }: { isDevView?: boolean }) {
               )
               .slice(0, 3)
               .map((entry) => {
-                const cardContent = (
-                  <View>
-                    <View
-                      style={{
-                        flexDirection: "row",
-                        alignItems: "center",
-                        width: "100%",
-                      }}
-                    >
-                      {entry.moods && entry.moods.length > 1 ? (
-                        <ScrollView
-                          horizontal
-                          showsHorizontalScrollIndicator={false}
-                          nestedScrollEnabled={true}
-                          directionalLockEnabled={true}
-                          style={styles.moodScrollView}
-                        >
-                          <View style={styles.moodScrollContent}>
-                            {entry.moods.map((mood: MoodType) => {
-                              const moodOption = getMoodOption(mood)
-                              return (
-                                <Image
-                                  key={moodOption.type}
-                                  source={moodOption.image}
-                                  style={styles.entryImage}
-                                />
-                              )
-                            })}
-                          </View>
-                        </ScrollView>
-                      ) : (
-                        entry.moods &&
-                        entry.moods.length > 0 && (
-                          <Image
-                            key={getMoodOption(entry.moods[0]).type}
-                            source={getMoodOption(entry.moods[0]).image}
-                            style={styles.entryImage}
-                          />
-                        )
-                      )}
-                      <ThemedText style={styles.entryDate}>
-                        {new Date(entry.date).toLocaleDateString("en-US", {
-                          weekday: "short",
-                          month: "short",
-                          day: "numeric",
-                        })}
-                      </ThemedText>
-                    </View>
-                    {entry.note && (
-                      <ThemedText style={styles.entryNote} numberOfLines={2}>
-                        {entry.note}
-                      </ThemedText>
-                    )}
-                  </View>
-                )
                 const renderDeleteAction = () => (
                   <TouchableOpacity
                     style={styles.deleteSwipeAction}
@@ -1543,15 +1489,11 @@ export default function TrendsScreen({ isDevView }: { isDevView?: boolean }) {
                       activeOpacity={0.7}
                       onPress={() => openEditMoodModal(entry)}
                     >
-                      <ThemedView style={styles.entryCard}>
-                        {cardContent}
-                      </ThemedView>
+                      <EntryCard entry={entry} />
                     </TouchableOpacity>
                   </Swipeable>
                 ) : (
-                  <ThemedView key={entry.id} style={styles.entryCard}>
-                    {cardContent}
-                  </ThemedView>
+                  <EntryCard key={entry.id} entry={entry} />
                 )
               })}
           </ThemedView>
@@ -2410,7 +2352,7 @@ const styles = StyleSheet.create({
   },
   insightCard: {
     flexDirection: "row",
-    alignItems: "flex-start",
+    alignItems: "center",
     padding: 12,
     borderRadius: 12,
     backgroundColor: "rgba(139, 92, 246, 0.08)",
