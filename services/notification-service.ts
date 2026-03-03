@@ -14,7 +14,7 @@ export async function setupNotificationCategories(): Promise<void> {
   const moodActions: Notifications.NotificationAction[] = MOOD_OPTIONS.map(
     (mood) => ({
       identifier: `mood_${mood.type}`,
-      buttonTitle: `${mood.emoji} ${mood.label}`,
+      buttonTitle: `${mood.label}`,
       options: {
         opensAppToForeground: false, // Keep app in background after selection
       },
@@ -96,7 +96,7 @@ export function handleNotificationResponse(
           // Schedule a confirmation notification
           Notifications.scheduleNotificationAsync({
             content: {
-              title: `${validMood.emoji} Mood logged!`,
+              title: `Mood logged!`,
               body: `You're feeling ${validMood.label.toLowerCase()} today. Keep tracking!`,
               sound: false,
             },
@@ -117,7 +117,7 @@ export function handleNotificationResponse(
  */
 export function createMoodReminderContent(): Notifications.NotificationContentInput {
   return {
-    title: "How are you feeling today? 🌟",
+    title: "How are you feeling today?",
     body: "Tap to open the app, or expand to quickly log your mood.",
     sound: true,
     categoryIdentifier: MOOD_CATEGORY_ID,

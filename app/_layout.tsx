@@ -16,7 +16,12 @@ import { GestureHandlerRootView } from "react-native-gesture-handler"
 import "react-native-reanimated"
 
 import { useProSubscription } from "@/hooks/use-pro-subscription"
-import { StyleSheet, Text, TouchableOpacity, useColorScheme } from "react-native"
+import {
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  useColorScheme,
+} from "react-native"
 
 // Configure how notifications are handled when the app is in the foreground
 Notifications.setNotificationHandler({
@@ -66,7 +71,10 @@ export default function RootLayout() {
     <GestureHandlerRootView style={{ flex: 1 }}>
       <ThemeProvider value={colorScheme === "dark" ? DarkTheme : DefaultTheme}>
         <Stack>
-          <Stack.Screen name="(tabs)" options={{ headerShown: false, isDevView }}  />
+          <Stack.Screen
+            name="(tabs)"
+            options={{ headerShown: false, isDevView }}
+          />
           <Stack.Screen
             name="modal"
             options={{ presentation: "modal", title: "Modal" }}
@@ -83,7 +91,7 @@ export default function RootLayout() {
             }}
           >
             <Text style={styles.devViewToggleText}>
-              {isPro ? "⭐ Disable Pro" : "⭐ Enable Pro"}
+              {isPro ? "Disable Pro" : "Enable Pro"}
             </Text>
           </TouchableOpacity>
         )}
@@ -91,11 +99,14 @@ export default function RootLayout() {
         {/* Dev/Prod View Toggle Button */}
         {__DEV__ && (
           <TouchableOpacity
-            style={[styles.devViewToggleButton, !isDevView && styles.devViewToggleProd]}
+            style={[
+              styles.devViewToggleButton,
+              !isDevView && styles.devViewToggleProd,
+            ]}
             onPress={() => setIsDevView((v) => !v)}
           >
             <Text style={styles.devViewToggleText}>
-              {isDevView ? "🛠️ DEV" : "📱 PROD"}
+              {isDevView ? "DEV" : "PROD"}
             </Text>
           </TouchableOpacity>
         )}

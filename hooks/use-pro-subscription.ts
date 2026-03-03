@@ -5,7 +5,6 @@ const PRO_STORAGE_KEY = "@mood_tracker_pro_status"
 
 export interface ProFeature {
   id: string
-  emoji: string
   title: string
   description: string
 }
@@ -13,38 +12,32 @@ export interface ProFeature {
 export const PRO_FEATURES: ProFeature[] = [
   {
     id: "unlimited-history",
-    emoji: "📊",
     title: "Unlimited History",
     description: "Access your complete mood history with full year view",
   },
   {
     id: "view-all-entries",
-    emoji: "📖",
     title: "View All Entries",
     description: "Browse and search through all your mood entries in detail",
   },
   {
     id: "advanced-analytics",
-    emoji: "🧠",
     title: "Advanced Analytics",
     description: "Discover mood patterns, trends, and emotional correlations",
   },
   {
     id: "custom-reminders",
-    emoji: "⏰",
     title: "Multiple Reminders",
     description: "Set multiple reminder times throughout the day",
   },
   {
     id: "mood-insights",
-    emoji: "✨",
     title: "AI Mood Insights",
     description:
       "Get personalized insights and recommendations based on your patterns",
   },
   {
     id: "multi-mood",
-    emoji: "🎭",
     title: "Multiple Daily Moods",
     description:
       "Log your mood throughout the day to capture how it changes over time",

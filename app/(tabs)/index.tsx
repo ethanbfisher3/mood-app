@@ -259,7 +259,7 @@ export default function TrendsScreen({ isDevView }: { isDevView?: boolean }) {
       }
     }
 
-    return { avgMood, mostCommon, streak }
+    return { mostCommon, streak }
   }, [filteredEntries, entries])
 
   // Advanced analytics (Pro feature)
@@ -361,30 +361,10 @@ export default function TrendsScreen({ isDevView }: { isDevView?: boolean }) {
     const result: { emoji: string; text: string }[] = []
     if (entries.length < 3) return result
 
-    // Streak insight
-    if (stats.streak >= 7) {
-      result.push({
-        emoji: "🔥",
-        text: `Amazing! You're on a ${stats.streak}-day streak. Consistency is key to understanding your emotions.`,
-      })
-    } else if (stats.streak >= 3) {
-      result.push({
-        emoji: "👏",
-        text: `Nice ${stats.streak}-day streak! Keep logging daily to build a clear picture of your mood patterns.`,
-      })
-    }
-
-    // Trend insight - compare recent week to overall
-    const recentEntries = entries.filter((e) => {
-      const d = new Date(e.date)
-      const now = new Date()
-      return (now.getTime() - d.getTime()) / (1000 * 60 * 60 * 24) <= 7
-    })
-
     // Best day insight
     if (advancedStats.bestDayOfWeek) {
       result.push({
-        emoji: "TODO",
+        emoji: require("@/assets/images/app_emoji/best.png"),
         text: `${advancedStats.bestDayOfWeek}s tend to be your best days. Plan activities you enjoy on your harder days!`,
       })
     }
@@ -392,12 +372,12 @@ export default function TrendsScreen({ isDevView }: { isDevView?: boolean }) {
     // Variability insight
     if (advancedStats.moodVariability > 1.2) {
       result.push({
-        emoji: "TODO",
+        emoji: require("@/assets/images/app_emoji/stressed.png"),
         text: `Your moods show significant variation. Journaling notes with your entries may help identify triggers.`,
       })
     } else if (advancedStats.moodVariability < 0.5 && entries.length >= 7) {
       result.push({
-        emoji: "TODO",
+        emoji: require("@/assets/images/app_emoji/relieved.png"),
         text: `Your mood has been quite stable. This consistency suggests good emotional balance.`,
       })
     }
@@ -408,12 +388,12 @@ export default function TrendsScreen({ isDevView }: { isDevView?: boolean }) {
     )
     if (entriesWithNotes.length === 0 && entries.length >= 5) {
       result.push({
-        emoji: "TODO",
+        emoji: require("@/assets/images/app_emoji/notes.png"),
         text: `Try adding notes to your mood entries — it helps you reflect on what influences your feelings.`,
       })
     } else if (entriesWithNotes.length > entries.length * 0.5) {
       result.push({
-        emoji: "TODO",
+        emoji: require("@/assets/images/app_emoji/notes.png"),
         text: `Great job adding notes! Your reflections make your mood data much more meaningful.`,
       })
     }
@@ -421,7 +401,7 @@ export default function TrendsScreen({ isDevView }: { isDevView?: boolean }) {
     // Longest streak
     if (advancedStats.longestStreak >= 14) {
       result.push({
-        emoji: "TODO",
+        emoji: require("@/assets/images/app_emoji/streak.png"),
         text: `Your all-time longest streak is ${advancedStats.longestStreak} days. Incredible dedication!`,
       })
     }
@@ -468,7 +448,7 @@ export default function TrendsScreen({ isDevView }: { isDevView?: boolean }) {
 
   // Generate chart data points
   const chartData = useMemo(() => {
-    const data: { date: string; value: number | null; entry?: MoodEntry }[] = []
+    const data: { date: string; entry?: MoodEntry }[] = []
 
     if (timeRange === "year") {
       // For year view, always show January through December of the current year (with offset)
@@ -485,16 +465,8 @@ export default function TrendsScreen({ isDevView }: { isDevView?: boolean }) {
           )
         })
 
-        // Calculate average mood for the month (support multi-mood entries)
-        let avgValue: number | null = null
-        if (monthEntries.length > 0) {
-          const values = monthEntries.map((e) => getEntryAverageValue(e))
-          avgValue = values.reduce((a, b) => a + b, 0) / values.length
-        }
-
         data.push({
           date: `${year}-${String(month + 1).padStart(2, "0")}`,
-          value: avgValue,
           entry: monthEntries[0], // Just for reference
         })
       }
@@ -517,7 +489,6 @@ export default function TrendsScreen({ isDevView }: { isDevView?: boolean }) {
 
         data.push({
           date: dateStr,
-          value: entry ? getEntryAverageValue(entry) : null,
           entry,
         })
       }
@@ -540,7 +511,6 @@ export default function TrendsScreen({ isDevView }: { isDevView?: boolean }) {
 
         data.push({
           date: dateStr,
-          value: entry ? getEntryAverageValue(entry) : null,
           entry,
         })
       }
@@ -612,7 +582,7 @@ export default function TrendsScreen({ isDevView }: { isDevView?: boolean }) {
 
   const renderSimpleChart = () => {
     const chartPadding = 6 // Padding to prevent point cutoff
-    const chartHeight = 400
+    const chartHeight = 320
     const cellSize = 32
     const cellGap = 8
     const maxBarHeight = chartHeight - chartPadding * 2
@@ -804,7 +774,7 @@ export default function TrendsScreen({ isDevView }: { isDevView?: boolean }) {
                       {chartData.map((point, colIndex) => {
                         const entry = point.entry
                         const hasMood = entry
-                          ? getEntryMoods(entry).includes(moodRow.type)
+                          ? entry.moods.includes(moodRow.type)
                           : false
                         const BoxComponent =
                           timeRange === "year" ? TouchableOpacity : View
@@ -927,7 +897,7 @@ export default function TrendsScreen({ isDevView }: { isDevView?: boolean }) {
                 )
                 const moodCounts: Record<string, number> = {}
                 monthEntries.forEach((me) => {
-                  getEntryMoods(me).forEach((mt) => {
+                  me.moods.forEach((mt) => {
                     moodCounts[mt] = (moodCounts[mt] || 0) + 1
                   })
                 })
@@ -954,7 +924,7 @@ export default function TrendsScreen({ isDevView }: { isDevView?: boolean }) {
                     <ThemedText
                       style={[styles.barTooltipText, { marginLeft: 8 }]}
                     >
-                      Found in {count} entries
+                      Found in {count} entr{count !== 1 ? "ies" : "y"}
                     </ThemedText>
                   </View>
                 )
@@ -1068,6 +1038,14 @@ export default function TrendsScreen({ isDevView }: { isDevView?: boolean }) {
       <ScrollView contentContainerStyle={styles.scrollContent}>
         <ThemedView style={styles.header}>
           <ThemedText type="title">Mood Trends</ThemedText>
+          <ThemedText type="default" style={{ marginTop: 4 }}>
+            View your moods for this{" "}
+            {timeRange === "week"
+              ? "week"
+              : timeRange === "month"
+                ? "month"
+                : "year"}
+          </ThemedText>
         </ThemedView>
 
         {/* Time Range Buttons */}
@@ -1080,7 +1058,6 @@ export default function TrendsScreen({ isDevView }: { isDevView?: boolean }) {
                 style={[
                   styles.rangeButton,
                   timeRange === range && styles.rangeButtonActive,
-                  isDisabled && styles.rangeButtonDisabled,
                 ]}
                 onPress={() => {
                   if (isDisabled) {
@@ -1093,16 +1070,15 @@ export default function TrendsScreen({ isDevView }: { isDevView?: boolean }) {
                   setChartOffset(0)
                 }}
               >
-                <ThemedText
-                  style={[
-                    styles.rangeButtonText,
-                    timeRange === range && styles.rangeButtonTextActive,
-                    isDisabled && styles.rangeButtonTextDisabled,
-                  ]}
-                >
+                <ThemedText style={[styles.rangeButtonText]}>
                   {rangeConfig[range].label}
-                  {isDisabled ? " 🔒" : ""}
                 </ThemedText>
+                {isDisabled ? (
+                  <Image
+                    source={require("@/assets/images/app_emoji/locked.png")}
+                    style={styles.lockedImage}
+                  />
+                ) : null}
               </TouchableOpacity>
             )
           })}
@@ -1110,35 +1086,6 @@ export default function TrendsScreen({ isDevView }: { isDevView?: boolean }) {
 
         {/* Chart */}
         {renderSimpleChart()}
-
-        {/* Upgrade to Pro Button - only show if not pro */}
-        {!isPro && (
-          <TouchableOpacity
-            style={styles.upgradeButton}
-            onPress={() => setUpgradeModalVisible(true)}
-            activeOpacity={0.8}
-          >
-            <View style={styles.upgradeButtonTextContainer}>
-              <ThemedText style={styles.upgradeButtonTitle}>
-                Upgrade to Pro
-              </ThemedText>
-              <ThemedText style={styles.upgradeButtonSubtitle}>
-                Unlock Year view, Show all entries & more
-              </ThemedText>
-            </View>
-            <ThemedText style={styles.upgradeButtonArrow}>→</ThemedText>
-          </TouchableOpacity>
-        )}
-
-        {/* Pro Badge - show if pro */}
-        {isPro && (
-          <View style={styles.proBadge}>
-            <ThemedText style={styles.proBadgeEmoji}>⭐</ThemedText>
-            <ThemedText style={styles.proBadgeText}>
-              You are a Pro Member
-            </ThemedText>
-          </View>
-        )}
 
         {/* Today's Mood Button */}
         {isPro && todaysMoods.length > 0 ? (
@@ -1153,10 +1100,7 @@ export default function TrendsScreen({ isDevView }: { isDevView?: boolean }) {
               </ThemedText>
             </View>
             {todaysMoods.map((entry) => {
-              const moodsForEntry = getEntryMoods(entry)
-              const mood = getMoodOption(
-                moodsForEntry[0] ?? MOOD_OPTIONS[2].type,
-              )
+              const mood = getMoodOption(entry.moods[0] ?? MOOD_OPTIONS[2].type)
               const renderRightActions = () => (
                 <TouchableOpacity
                   style={styles.deleteSwipeAction}
@@ -1203,10 +1147,10 @@ export default function TrendsScreen({ isDevView }: { isDevView?: boolean }) {
                             />
                           )
                         })
-                      : entry.mood && (
+                      : entry.moods && (
                           <Image
-                            key={getMoodOption(entry.mood).type}
-                            source={getMoodOption(entry.mood).image}
+                            key={getMoodOption(entry.moods[0]).type}
+                            source={getMoodOption(entry.moods[0]).image}
                             style={styles.todayMoodMultiImage}
                           />
                         )}
@@ -1244,7 +1188,7 @@ export default function TrendsScreen({ isDevView }: { isDevView?: boolean }) {
               styles.todayMoodButton,
               todaysMood &&
                 (() => {
-                  const m = getEntryMoods(todaysMood)[0] ?? MOOD_OPTIONS[2].type
+                  const m = todaysMood.moods[0] ?? MOOD_OPTIONS[2].type
                   return {
                     borderColor: getMoodOption(m).color,
                     backgroundColor: getMoodOption(m).color + "15",
@@ -1257,7 +1201,7 @@ export default function TrendsScreen({ isDevView }: { isDevView?: boolean }) {
             {todaysMood ? (
               <View style={styles.todayMoodContent}>
                 {(() => {
-                  const m = getEntryMoods(todaysMood)[0] ?? MOOD_OPTIONS[2].type
+                  const m = todaysMood.moods[0] ?? MOOD_OPTIONS[2].type
                   return (
                     <Image
                       source={getMoodOption(m).image}
@@ -1271,16 +1215,15 @@ export default function TrendsScreen({ isDevView }: { isDevView?: boolean }) {
                   </ThemedText>
                   <ThemedText style={styles.todayMoodValue}>
                     {(() =>
-                      getMoodOption(
-                        getEntryMoods(todaysMood)[0] ?? MOOD_OPTIONS[2].type,
-                      ).label)()}
+                      getMoodOption(todaysMood.moods[0] ?? MOOD_OPTIONS[2].type)
+                        .label)()}
                   </ThemedText>
                 </View>
                 <ThemedText style={styles.todayMoodEdit}>Edit</ThemedText>
               </View>
             ) : (
               <View style={styles.todayMoodContent}>
-                <ThemedText style={styles.todayMoodEmoji}>➕</ThemedText>
+                <ThemedText style={styles.todayMoodEmoji}>+</ThemedText>
                 <View style={styles.todayMoodTextContainer}>
                   <ThemedText style={styles.todayMoodLabel}>
                     Log Today's Mood
@@ -1297,10 +1240,6 @@ export default function TrendsScreen({ isDevView }: { isDevView?: boolean }) {
         {/* Stats - Pro feature */}
         {isPro ? (
           <ThemedView style={styles.statsContainer}>
-            <ThemedText type="subtitle" style={styles.statsTitle}>
-              Advanced Statistics
-            </ThemedText>
-
             <View style={styles.statsGrid}>
               {/* Average Mood card removed per request; grid will show remaining 3 stats */}
 
@@ -1308,31 +1247,25 @@ export default function TrendsScreen({ isDevView }: { isDevView?: boolean }) {
                 {stats.mostCommon ? (
                   <Image
                     source={getMoodOption(stats.mostCommon as any).image}
-                    style={styles.statImage}
+                    style={{
+                      ...styles.statImage,
+                      marginBottom: 0,
+                      paddingTop: 4,
+                    }}
                   />
                 ) : (
                   <ThemedText style={styles.statEmoji}>—</ThemedText>
                 )}
-                <ThemedText style={styles.statLabel}>Most Common</ThemedText>
-              </ThemedView>
-
-              <ThemedView style={styles.statCard}>
-                <ThemedText style={styles.statEmoji}>📊</ThemedText>
-                <ThemedText style={styles.statLabel}>Entries</ThemedText>
-                <ThemedText style={styles.statValue}>
-                  {filteredEntries.length} /{" "}
-                  {timeRange === "month"
-                    ? new Date(
-                        new Date().getFullYear(),
-                        new Date().getMonth() + chartOffset + 1,
-                        0,
-                      ).getDate()
-                    : rangeConfig[timeRange].days}
+                <ThemedText style={styles.statLabel}>
+                  Most Common Mood
                 </ThemedText>
               </ThemedView>
 
               <ThemedView style={styles.statCard}>
-                <ThemedText style={styles.statEmoji}>🔥</ThemedText>
+                <Image
+                  source={require("@/assets/images/app_emoji/streak.png")}
+                  style={styles.analyticsCardEmoji}
+                />
                 <ThemedText style={styles.statLabel}>Current Streak</ThemedText>
                 <ThemedText style={styles.statValue}>
                   {stats.streak} {stats.streak === 1 ? "day" : "days"}
@@ -1388,15 +1321,18 @@ export default function TrendsScreen({ isDevView }: { isDevView?: boolean }) {
 
             {/* Additional Analytics */}
             <View style={styles.analyticsSection}>
-              <ThemedText style={styles.analyticsSectionTitle}>
+              <ThemedText
+                style={{ ...styles.analyticsSectionTitle, marginBottom: 8 }}
+              >
                 Deep Insights
               </ThemedText>
               <View style={styles.analyticsGrid}>
                 {advancedStats.bestDayOfWeek && (
                   <ThemedView style={styles.analyticsCard}>
-                    <ThemedText style={styles.analyticsCardEmoji}>
-                      ☀️
-                    </ThemedText>
+                    <Image
+                      source={require("@/assets/images/app_emoji/best.png")}
+                      style={styles.analyticsCardEmoji}
+                    />
                     <ThemedText style={styles.analyticsCardLabel}>
                       Best Day
                     </ThemedText>
@@ -1407,9 +1343,10 @@ export default function TrendsScreen({ isDevView }: { isDevView?: boolean }) {
                 )}
                 {advancedStats.worstDayOfWeek && (
                   <ThemedView style={styles.analyticsCard}>
-                    <ThemedText style={styles.analyticsCardEmoji}>
-                      🌧️
-                    </ThemedText>
+                    <Image
+                      source={require("@/assets/images/app_emoji/stressed.png")}
+                      style={styles.analyticsCardEmoji}
+                    />
                     <ThemedText style={styles.analyticsCardLabel}>
                       Hardest Day
                     </ThemedText>
@@ -1419,7 +1356,10 @@ export default function TrendsScreen({ isDevView }: { isDevView?: boolean }) {
                   </ThemedView>
                 )}
                 <ThemedView style={styles.analyticsCard}>
-                  <ThemedText style={styles.analyticsCardEmoji}>🏆</ThemedText>
+                  <Image
+                    source={require("@/assets/images/app_emoji/streak.png")}
+                    style={styles.analyticsCardEmoji}
+                  />
                   <ThemedText style={styles.analyticsCardLabel}>
                     Best Streak
                   </ThemedText>
@@ -1429,7 +1369,10 @@ export default function TrendsScreen({ isDevView }: { isDevView?: boolean }) {
                   </ThemedText>
                 </ThemedView>
                 <ThemedView style={styles.analyticsCard}>
-                  <ThemedText style={styles.analyticsCardEmoji}>📈</ThemedText>
+                  <Image
+                    source={require("@/assets/images/app_emoji/numbers.png")}
+                    style={styles.analyticsCardEmoji}
+                  />
                   <ThemedText style={styles.analyticsCardLabel}>
                     Total Entries
                   </ThemedText>
@@ -1443,14 +1386,23 @@ export default function TrendsScreen({ isDevView }: { isDevView?: boolean }) {
             {/* AI Mood Insights */}
             {insights.length > 0 && (
               <View style={styles.analyticsSection}>
-                <ThemedText style={styles.analyticsSectionTitle}>
-                  ✨ Mood Insights
+                <ThemedText
+                  style={{ ...styles.analyticsSectionTitle, marginBottom: 8 }}
+                >
+                  Mood Insights
                 </ThemedText>
                 {insights.map((insight, index) => (
                   <View key={index} style={styles.insightCard}>
-                    <ThemedText style={styles.insightEmoji}>
-                      {insight.emoji}
-                    </ThemedText>
+                    {typeof insight.emoji === "string" ? (
+                      <ThemedText style={styles.insightEmoji}>
+                        {insight.emoji}
+                      </ThemedText>
+                    ) : (
+                      <Image
+                        source={insight.emoji}
+                        style={styles.insightEmojiImage}
+                      />
+                    )}
                     <ThemedText style={styles.insightText}>
                       {insight.text}
                     </ThemedText>
@@ -1464,7 +1416,10 @@ export default function TrendsScreen({ isDevView }: { isDevView?: boolean }) {
             style={styles.statsUpgradeContainer}
             onPress={() => setUpgradeModalVisible(true)}
           >
-            <ThemedText style={styles.statsUpgradeEmoji}>🔒</ThemedText>
+            <Image
+              source={require("@/assets/images/app_emoji/locked.png")}
+              style={styles.statsUpgradeEmoji}
+            />
             <View style={styles.statsUpgradeContent}>
               <ThemedText style={styles.statsUpgradeTitle}>
                 Advanced Statistics
@@ -1533,15 +1488,11 @@ export default function TrendsScreen({ isDevView }: { isDevView?: boolean }) {
                           </View>
                         </ScrollView>
                       ) : (
-                        (entry.mood ||
-                          (entry.moods && entry.moods.length == 1)) && (
+                        entry.moods &&
+                        entry.moods.length > 0 && (
                           <Image
-                            key={
-                              getMoodOption(entry.mood || entry.moods![0]).type
-                            }
-                            source={
-                              getMoodOption(entry.mood || entry.moods![0]).image
-                            }
+                            key={getMoodOption(entry.moods[0]).type}
+                            source={getMoodOption(entry.moods[0]).image}
                             style={styles.entryImage}
                           />
                         )
@@ -1615,6 +1566,31 @@ export default function TrendsScreen({ isDevView }: { isDevView?: boolean }) {
               Start tracking your mood to see trends!
             </ThemedText>
           </ThemedView>
+        )}
+
+        {/* Upgrade to Pro Button - only show if not pro */}
+        {!isPro ? (
+          <TouchableOpacity
+            style={styles.upgradeButton}
+            onPress={() => setUpgradeModalVisible(true)}
+            activeOpacity={0.8}
+          >
+            <View style={styles.upgradeButtonTextContainer}>
+              <ThemedText style={styles.upgradeButtonTitle}>
+                Upgrade to Pro
+              </ThemedText>
+              <ThemedText style={styles.upgradeButtonSubtitle}>
+                Unlock Year view, Show all entries & more
+              </ThemedText>
+            </View>
+            <ThemedText style={styles.upgradeButtonArrow}>→</ThemedText>
+          </TouchableOpacity>
+        ) : (
+          <View style={styles.proBadge}>
+            <ThemedText style={styles.proBadgeText}>
+              You are a Pro Member
+            </ThemedText>
+          </View>
         )}
       </ScrollView>
 
@@ -1713,7 +1689,7 @@ export default function TrendsScreen({ isDevView }: { isDevView?: boolean }) {
       </Modal>
 
       {/* Dev-only Add Entry Modal */}
-      {__DEV__ && (
+      {__DEV__ && isDevView && (
         <Modal
           animationType="slide"
           transparent={true}
@@ -1860,6 +1836,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
+    marginBottom: 8,
   },
   scrollContent: {
     padding: 20,
@@ -1879,6 +1856,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 24,
     borderRadius: 20,
     backgroundColor: "rgba(150, 150, 150, 0.1)",
+    display: "flex",
+    flexDirection: "row",
   },
   rangeButtonActive: {
     backgroundColor: "#4CAF50",
@@ -1888,6 +1867,11 @@ const styles = StyleSheet.create({
   },
   rangeButtonTextActive: {
     color: "white",
+  },
+  lockedImage: {
+    width: 24,
+    height: 24,
+    marginLeft: 4,
   },
   rangeButtonDisabled: {
     opacity: 0.5,
@@ -2244,14 +2228,12 @@ const styles = StyleSheet.create({
   },
   statEmoji: {
     fontSize: 32,
-    marginBottom: 8,
     lineHeight: 42,
     textAlign: "center",
   },
   statLabel: {
     fontSize: 12,
     opacity: 0.7,
-    marginBottom: 4,
   },
   statValue: {
     fontSize: 16,
@@ -2268,8 +2250,10 @@ const styles = StyleSheet.create({
     marginBottom: 24,
   },
   statsUpgradeEmoji: {
-    fontSize: 24,
+    width: 24,
+    height: 24,
     marginRight: 12,
+    paddingTop: 4,
   },
   statsUpgradeContent: {
     flex: 1,
@@ -2308,7 +2292,6 @@ const styles = StyleSheet.create({
   analyticsSectionTitle: {
     fontSize: 15,
     fontWeight: "700",
-    marginBottom: 12,
   },
   distributionRow: {
     flexDirection: "row",
@@ -2412,8 +2395,8 @@ const styles = StyleSheet.create({
     overflow: "visible",
   },
   analyticsCardEmoji: {
-    fontSize: 22,
-    lineHeight: 30,
+    width: 30,
+    height: 30,
     marginBottom: 4,
   },
   analyticsCardLabel: {
@@ -2437,6 +2420,11 @@ const styles = StyleSheet.create({
     fontSize: 20,
     marginRight: 10,
     lineHeight: 28,
+  },
+  insightEmojiImage: {
+    width: 24,
+    height: 24,
+    marginRight: 10,
   },
   insightText: {
     flex: 1,
@@ -2552,9 +2540,9 @@ const styles = StyleSheet.create({
     marginBottom: 24,
     padding: 16,
     borderRadius: 16,
-    backgroundColor: "#8B5CF6",
+    backgroundColor: "#0e5168",
     borderWidth: 2,
-    borderColor: "#7C3AED",
+    borderColor: "#125c75",
   },
   upgradeButtonEmoji: {
     fontSize: 28,

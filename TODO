@@ -1,7 +1,5 @@
-On android, when adding a time with the calendar, don't use the cancel and add buttons because android has its own thing
+After release:
 Fix sizes and styles in case a user is on an ipad
-Remove emojis that are hardcoded in the .tsx files and put images instead
 
 Tutorial for the first time
 Fix push notifications
-Fix the little square in light mode/dark mode

@@ -1,6 +1,6 @@
 import DateTimePicker from "@react-native-community/datetimepicker"
 import * as Notifications from "expo-notifications"
-import React, { useEffect, useState } from "react"
+import { useEffect, useState } from "react"
 import {
   Alert,
   Platform,
@@ -182,9 +182,9 @@ export default function NotificationsScreen({
               <ThemedText style={styles.settingTitle}>
                 Daily Reminder
               </ThemedText>
-              <ThemedText style={styles.settingDescription}>
+              {/* <ThemedText style={styles.settingDescription}>
                 Get notified to log your mood every day
-              </ThemedText>
+              </ThemedText> */}
             </View>
             <Switch
               value={settings.enabled}
@@ -387,25 +387,16 @@ export default function NotificationsScreen({
           <ThemedText type="subtitle" style={styles.infoTitle}>
             Your Mood, On Time
           </ThemedText>
-
-          <View style={styles.infoItem}>
-            <ThemedText style={styles.infoText}>
-              • You'll receive a notification at your chosen time each day
-            </ThemedText>
-          </View>
-
-          <View style={styles.infoItem}>
-            <ThemedText style={styles.infoText}>
-              • Expand the notification to quickly log your mood or tap the
-              notification to open the app and add notes
-            </ThemedText>
-          </View>
-
-          <View style={styles.infoItem}>
-            <ThemedText style={styles.infoText}>
-              • Consistent tracking helps you understand your mood patterns
-            </ThemedText>
-          </View>
+          <ThemedText style={styles.infoText}>
+            • You'll receive a notification at your chosen time each day
+          </ThemedText>
+          <ThemedText style={styles.infoText}>
+            • Expand the notification to quickly log your mood or tap the
+            notification to open the app and add notes
+          </ThemedText>
+          <ThemedText style={styles.infoText}>
+            • Consistent tracking helps you understand your mood patterns
+          </ThemedText>
         </ThemedView>
 
         {/* Permission Status */}
@@ -576,7 +567,7 @@ const styles = StyleSheet.create({
     fontWeight: "600",
   },
   infoSection: {
-    marginTop: 24,
+    marginTop: 12,
     marginBottom: 24,
   },
   infoTitle: {
