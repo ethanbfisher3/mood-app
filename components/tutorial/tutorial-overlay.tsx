@@ -1,19 +1,23 @@
 import { ThemedText } from "@/components/themed-text"
 import { ThemedView } from "@/components/themed-view"
 import { useOnboardingTutorial } from "@/hooks/use-onboarding-tutorial"
+import { useProSubscription } from "@/hooks/use-pro-subscription"
 import { useThemeColor } from "@/hooks/use-theme-color"
 import { useEffect, useRef, useState } from "react"
 import {
-    Animated,
-    Dimensions,
-    Easing,
-    Pressable,
-    StyleSheet,
-    TouchableOpacity,
-    View,
+  Animated,
+  Dimensions,
+  Easing,
+  Platform,
+  Pressable,
+  StatusBar,
+  StyleSheet,
+  TouchableOpacity,
+  View,
 } from "react-native"
 
-const SPOTLIGHT_PADDING = 10
+const SPOTLIGHT_PADDING_X = 10
+const SPOTLIGHT_PADDING_Y = 6
 
 export function TutorialOverlay() {
   const {
@@ -26,6 +30,8 @@ export function TutorialOverlay() {
     nextStep,
     onUpgradePress,
   } = useOnboardingTutorial()
+
+  const { isPro } = useProSubscription()
 
   const [targetRect, setTargetRect] = useState<{
     x: number
@@ -92,7 +98,11 @@ export function TutorialOverlay() {
   }, [currentStep, isActive, fadeAnim, riseAnim, pulseAnim])
 
   useEffect(() => {
-    if (!isActive || !currentStep?.targetId || currentStep.kind !== "spotlight") {
+    if (
+      !isActive ||
+      !currentStep?.targetId ||
+      currentStep.kind !== "spotlight"
+    ) {
       setTargetRect(null)
       return
     }
@@ -124,14 +134,22 @@ export function TutorialOverlay() {
     currentStep.cardPlacement ?? (isModalStep ? "center" : "bottom")
 
   const { width, height } = Dimensions.get("window")
+  const statusBarHeight = StatusBar.currentHeight || 0
+
+  const baseOffset =
+    Platform.OS === "android" && currentStep?.androidYOffset !== undefined
+      ? currentStep.androidYOffset
+      : (currentStep?.iosYOffset ?? 0)
+
+  const stepYOffset = baseOffset + statusBarHeight
 
   const spotlight =
     currentStep.kind === "spotlight" && targetRect
       ? {
-          x: Math.max(0, targetRect.x - SPOTLIGHT_PADDING),
-          y: Math.max(0, targetRect.y - SPOTLIGHT_PADDING),
-          width: Math.min(width, targetRect.width + SPOTLIGHT_PADDING * 2),
-          height: Math.min(height, targetRect.height + SPOTLIGHT_PADDING * 2),
+          x: Math.max(0, targetRect.x - SPOTLIGHT_PADDING_X),
+          y: Math.max(0, targetRect.y + stepYOffset - SPOTLIGHT_PADDING_Y),
+          width: Math.min(width, targetRect.width + SPOTLIGHT_PADDING_X * 2),
+          height: Math.min(height, targetRect.height + SPOTLIGHT_PADDING_Y * 2),
         }
       : null
 
@@ -140,9 +158,16 @@ export function TutorialOverlay() {
     outputRange: [0.45, 0.95],
   })
 
-  const progressLabel = `${currentStepIndex + 1} / ${steps.length}`
-  const primaryButtonLabel =
-    currentStep.primaryLabel ?? (isLastStep ? "Finish" : "Next")
+  // Calculate effective step count: if user is pro in onboarding, skip the pro-modal step
+  const isOnboardingFlow = currentStep?.id?.startsWith("step-") ?? false
+  const effectiveStepsCount =
+    isPro && isOnboardingFlow ? steps.length - 1 : steps.length
+  const progressLabel = `${currentStepIndex + 1} / ${effectiveStepsCount}`
+  const isProAndAddNotification =
+    isPro && currentStep?.id === "step-add-notification"
+  const primaryButtonLabel = isProAndAddNotification
+    ? "Finish"
+    : (currentStep.primaryLabel ?? (isLastStep ? "Finish" : "Next"))
   const hasDescription = currentStep.description.trim().length > 0
 
   const handlePrimaryPress = async () => {
@@ -233,13 +258,20 @@ export function TutorialOverlay() {
               />
             </>
           ) : (
-            <View style={[StyleSheet.absoluteFill, { backgroundColor: overlayColor }]} />
+            <View
+              style={[
+                StyleSheet.absoluteFill,
+                { backgroundColor: overlayColor },
+              ]}
+            />
           )}
         </Pressable>
       )}
 
       {isModalStep && (
-        <View style={[StyleSheet.absoluteFill, { backgroundColor: overlayColor }]} />
+        <View
+          style={[StyleSheet.absoluteFill, { backgroundColor: overlayColor }]}
+        />
       )}
 
       <Animated.View
@@ -279,7 +311,9 @@ export function TutorialOverlay() {
             accessibilityRole="button"
             accessibilityLabel={primaryButtonLabel}
           >
-            <ThemedText style={styles.primaryButtonText}>{primaryButtonLabel}</ThemedText>
+            <ThemedText style={styles.primaryButtonText}>
+              {primaryButtonLabel}
+            </ThemedText>
           </TouchableOpacity>
         </ThemedView>
       </Animated.View>

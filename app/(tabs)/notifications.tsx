@@ -1,5 +1,4 @@
 import DateTimePicker from "@react-native-community/datetimepicker"
-import * as Notifications from "expo-notifications"
 import { useEffect, useRef, useState } from "react"
 import {
   Alert,
@@ -10,6 +9,15 @@ import {
   TouchableOpacity,
   View,
 } from "react-native"
+
+let Notifications: typeof import("expo-notifications") | null = null
+
+try {
+  Notifications =
+    require("expo-notifications") as typeof import("expo-notifications")
+} catch (error) {
+  console.warn("expo-notifications is not available in this environment")
+}
 
 import { ThemedText } from "@/components/themed-text"
 import { ThemedView } from "@/components/themed-view"
@@ -192,12 +200,7 @@ export default function NotificationsScreen({
       const timer = setTimeout(() => scrollTo(addReminderY), 220)
       return () => clearTimeout(timer)
     }
-  }, [
-    isActive,
-    currentStep,
-    notificationsHeaderY,
-    addReminderY,
-  ])
+  }, [isActive, currentStep, notificationsHeaderY, addReminderY])
 
   if (loading) {
     return (
@@ -521,6 +524,13 @@ export default function NotificationsScreen({
                     )
                     return
                   }
+                }
+                if (!Notifications) {
+                  Alert.alert(
+                    "Not Available",
+                    "Notifications are not available in Expo Go on SDK 53+. Use a development build instead.",
+                  )
+                  return
                 }
                 await setupNotificationCategories()
                 await Notifications.scheduleNotificationAsync({

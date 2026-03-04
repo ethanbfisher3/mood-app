@@ -70,6 +70,7 @@ type ProContextValue = {
   buyPro: () => Promise<void>
   restorePurchases: () => Promise<void>
   toggleMockIapMode: () => Promise<void>
+  togglePro: () => Promise<void>
   features: ProFeature[]
 }
 
@@ -222,6 +223,12 @@ export function ProProvider({ children }: PropsWithChildren) {
     }
   }, [mockIapEnabled])
 
+  const togglePro = useCallback(async () => {
+    const nextProStatus = !isPro
+    setIsPro(nextProStatus)
+    await persistProStatus(nextProStatus)
+  }, [isPro, persistProStatus])
+
   const value = useMemo<ProContextValue>(
     () => ({
       isPro,
@@ -232,6 +239,7 @@ export function ProProvider({ children }: PropsWithChildren) {
       buyPro,
       restorePurchases,
       toggleMockIapMode,
+      togglePro,
       features: PRO_FEATURES,
     }),
     [
@@ -243,6 +251,7 @@ export function ProProvider({ children }: PropsWithChildren) {
       buyPro,
       restorePurchases,
       toggleMockIapMode,
+      togglePro,
     ],
   )
 

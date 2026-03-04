@@ -65,8 +65,13 @@ export default function TrendsScreen({ isDevView }: { isDevView?: boolean }) {
   const [devDate, setDevDate] = useState("")
   const [editingEntryId, setEditingEntryId] = useState<string | null>(null)
   const [upgradeModalVisible, setUpgradeModalVisible] = useState(false)
-  const { setUpgradeHandler, isActive, currentStep, startProTutorial, measureTarget } =
-    useOnboardingTutorial()
+  const {
+    setUpgradeHandler,
+    isActive,
+    currentStep,
+    startProTutorial,
+    measureTarget,
+  } = useOnboardingTutorial()
 
   const {
     isPro,
@@ -76,6 +81,7 @@ export default function TrendsScreen({ isDevView }: { isDevView?: boolean }) {
     purchaseError,
     mockIapEnabled,
     toggleMockIapMode,
+    togglePro,
   } = useProSubscription()
 
   const backgroundColor = useThemeColor({}, "background")
@@ -153,7 +159,7 @@ export default function TrendsScreen({ isDevView }: { isDevView?: boolean }) {
 
     const scrollTo = (y: number) => {
       mainScrollRef.current?.scrollTo({
-        y: Math.max(y - 16, 0),
+        y: Math.max(y - 116, 0),
         animated: true,
       })
     }
@@ -573,7 +579,10 @@ export default function TrendsScreen({ isDevView }: { isDevView?: boolean }) {
       if (b.count !== a.count) {
         return b.count - a.count
       }
-      return MOOD_OPTIONS.findIndex((m) => m.type === a.mood) - MOOD_OPTIONS.findIndex((m) => m.type === b.mood)
+      return (
+        MOOD_OPTIONS.findIndex((m) => m.type === a.mood) -
+        MOOD_OPTIONS.findIndex((m) => m.type === b.mood)
+      )
     })
   }, [advancedStats.moodDistribution])
 
@@ -1290,100 +1299,102 @@ export default function TrendsScreen({ isDevView }: { isDevView?: boolean }) {
           }}
         >
           {isPro && (
-          <ThemedView style={styles.todayMoodMultiContainer}>
-            <View style={styles.todayMoodMultiHeader}>
-              <ThemedText style={styles.todayMoodMultiTitle}>
-                Today&apos;s Moods
-              </ThemedText>
-              <ThemedText style={styles.todayMoodMultiCount}>
-                {todaysMoods.length}{" "}
-                {todaysMoods.length === 1 ? "entry" : "entries"}
-              </ThemedText>
-            </View>
-            {todaysMoods.map((entry) => {
-              const mood = getMoodOption(entry.moods[0] ?? MOOD_OPTIONS[2].type)
-              const renderRightActions = () => (
-                <TouchableOpacity
-                  style={styles.deleteSwipeAction}
-                  onPress={() => {
-                    Alert.alert(
-                      "Delete Mood",
-                      "Are you sure you want to delete this mood entry?",
-                      [
-                        { text: "Cancel", style: "cancel" },
-                        {
-                          text: "Delete",
-                          style: "destructive",
-                          onPress: () => deleteMood(entry.id),
-                        },
-                      ],
-                    )
-                  }}
-                >
-                  <Ionicons name="trash-outline" size={24} color="white" />
-                </TouchableOpacity>
-              )
-              return (
-                <Swipeable
-                  key={entry.id}
-                  renderRightActions={renderRightActions}
-                  overshootRight={false}
-                >
+            <ThemedView style={styles.todayMoodMultiContainer}>
+              <View style={styles.todayMoodMultiHeader}>
+                <ThemedText style={styles.todayMoodMultiTitle}>
+                  Today&apos;s Moods
+                </ThemedText>
+                <ThemedText style={styles.todayMoodMultiCount}>
+                  {todaysMoods.length}{" "}
+                  {todaysMoods.length === 1 ? "entry" : "entries"}
+                </ThemedText>
+              </View>
+              {todaysMoods.map((entry) => {
+                const mood = getMoodOption(
+                  entry.moods[0] ?? MOOD_OPTIONS[2].type,
+                )
+                const renderRightActions = () => (
                   <TouchableOpacity
-                    activeOpacity={0.7}
-                    onPress={() => openEditMoodModal(entry)}
-                    style={[
-                      styles.todayMoodMultiEntry,
-                      { borderLeftColor: mood.color },
-                    ]}
+                    style={styles.deleteSwipeAction}
+                    onPress={() => {
+                      Alert.alert(
+                        "Delete Mood",
+                        "Are you sure you want to delete this mood entry?",
+                        [
+                          { text: "Cancel", style: "cancel" },
+                          {
+                            text: "Delete",
+                            style: "destructive",
+                            onPress: () => deleteMood(entry.id),
+                          },
+                        ],
+                      )
+                    }}
                   >
-                    {entry.moods
-                      ? entry.moods.map((mood: MoodType) => {
-                          const moodOption = getMoodOption(mood)
-                          return (
+                    <Ionicons name="trash-outline" size={24} color="white" />
+                  </TouchableOpacity>
+                )
+                return (
+                  <Swipeable
+                    key={entry.id}
+                    renderRightActions={renderRightActions}
+                    overshootRight={false}
+                  >
+                    <TouchableOpacity
+                      activeOpacity={0.7}
+                      onPress={() => openEditMoodModal(entry)}
+                      style={[
+                        styles.todayMoodMultiEntry,
+                        { borderLeftColor: mood.color },
+                      ]}
+                    >
+                      {entry.moods
+                        ? entry.moods.map((mood: MoodType) => {
+                            const moodOption = getMoodOption(mood)
+                            return (
+                              <Image
+                                key={moodOption.type}
+                                source={moodOption.image}
+                                style={styles.todayMoodMultiImage}
+                              />
+                            )
+                          })
+                        : entry.moods && (
                             <Image
-                              key={moodOption.type}
-                              source={moodOption.image}
+                              key={getMoodOption(entry.moods[0]).type}
+                              source={getMoodOption(entry.moods[0]).image}
                               style={styles.todayMoodMultiImage}
                             />
-                          )
-                        })
-                      : entry.moods && (
-                          <Image
-                            key={getMoodOption(entry.moods[0]).type}
-                            source={getMoodOption(entry.moods[0]).image}
-                            style={styles.todayMoodMultiImage}
-                          />
-                        )}
+                          )}
 
-                    <View style={styles.todayMoodMultiInfo}>
-                      {entry.note && (
-                        <ThemedText
-                          style={styles.todayMoodMultiNote}
-                          numberOfLines={1}
-                        >
-                          {entry.note}
-                        </ThemedText>
-                      )}
-                    </View>
-                    <ThemedText style={styles.todayMoodMultiTime}>
-                      {entry.time || ""}
-                    </ThemedText>
-                  </TouchableOpacity>
-                </Swipeable>
-              )
-            })}
-            <TouchableOpacity
-              style={styles.addAnotherMoodButton}
-              onPress={openMoodModal}
-              activeOpacity={0.7}
-            >
-              <ThemedText style={styles.addAnotherMoodText}>
-                + Log Another Mood
-              </ThemedText>
-            </TouchableOpacity>
-          </ThemedView>
-          ) }
+                      <View style={styles.todayMoodMultiInfo}>
+                        {entry.note && (
+                          <ThemedText
+                            style={styles.todayMoodMultiNote}
+                            numberOfLines={1}
+                          >
+                            {entry.note}
+                          </ThemedText>
+                        )}
+                      </View>
+                      <ThemedText style={styles.todayMoodMultiTime}>
+                        {entry.time || ""}
+                      </ThemedText>
+                    </TouchableOpacity>
+                  </Swipeable>
+                )
+              })}
+              <TouchableOpacity
+                style={styles.addAnotherMoodButton}
+                onPress={openMoodModal}
+                activeOpacity={0.7}
+              >
+                <ThemedText style={styles.addAnotherMoodText}>
+                  + Log Another Mood
+                </ThemedText>
+              </TouchableOpacity>
+            </ThemedView>
+          )}
         </TutorialTarget>
 
         {/* Stats - Pro feature */}
@@ -1432,53 +1443,55 @@ export default function TrendsScreen({ isDevView }: { isDevView?: boolean }) {
                 }}
               >
                 <View style={styles.analyticsSection}>
-                <View style={styles.analyticsSectionTitleContainer}>
-                  <ThemedText style={styles.analyticsSectionTitle}>
-                    Mood Distribution
-                  </ThemedText>
+                  <View style={styles.analyticsSectionTitleContainer}>
+                    <ThemedText style={styles.analyticsSectionTitle}>
+                      Mood Distribution
+                    </ThemedText>
 
-                  {fullMoodDistribution.length > 5 && (
-                    <TouchableOpacity
-                      onPress={() => router.push({ pathname: "/distribution" })}
-                    >
-                      <ThemedText style={styles.showAllText}>
-                        Show all
-                      </ThemedText>
-                    </TouchableOpacity>
+                    {fullMoodDistribution.length > 5 && (
+                      <TouchableOpacity
+                        onPress={() =>
+                          router.push({ pathname: "/distribution" })
+                        }
+                      >
+                        <ThemedText style={styles.showAllText}>
+                          Show all
+                        </ThemedText>
+                      </TouchableOpacity>
+                    )}
+                  </View>
+                  {fullMoodDistribution.length > 0 ? (
+                    fullMoodDistribution.slice(0, 5).map((item) => {
+                      const mood = getMoodOption(item.mood)
+                      return (
+                        <View key={item.mood} style={styles.distributionRow}>
+                          <Image
+                            source={mood.image}
+                            style={styles.distributionImage}
+                          />
+                          <View style={styles.distributionBarContainer}>
+                            <View
+                              style={[
+                                styles.distributionBar,
+                                {
+                                  width: `${item.percentage}%`,
+                                  backgroundColor: mood.color,
+                                },
+                              ]}
+                            />
+                          </View>
+                          <ThemedText style={styles.distributionPercent}>
+                            {Math.round(item.percentage)}%
+                          </ThemedText>
+                        </View>
+                      )
+                    })
+                  ) : (
+                    <ThemedText style={styles.emptySubtext}>
+                      Log more entries to populate your mood distribution.
+                    </ThemedText>
                   )}
                 </View>
-                {fullMoodDistribution.length > 0 ? (
-                  fullMoodDistribution.slice(0, 5).map((item) => {
-                    const mood = getMoodOption(item.mood)
-                    return (
-                      <View key={item.mood} style={styles.distributionRow}>
-                        <Image
-                          source={mood.image}
-                          style={styles.distributionImage}
-                        />
-                        <View style={styles.distributionBarContainer}>
-                          <View
-                            style={[
-                              styles.distributionBar,
-                              {
-                                width: `${item.percentage}%`,
-                                backgroundColor: mood.color,
-                              },
-                            ]}
-                          />
-                        </View>
-                        <ThemedText style={styles.distributionPercent}>
-                          {Math.round(item.percentage)}%
-                        </ThemedText>
-                      </View>
-                    )
-                  })
-                ) : (
-                  <ThemedText style={styles.emptySubtext}>
-                    Log more entries to populate your mood distribution.
-                  </ThemedText>
-                )}
-              </View>
               </TutorialTarget>
             )}
 
@@ -1554,7 +1567,8 @@ export default function TrendsScreen({ isDevView }: { isDevView?: boolean }) {
             </TutorialTarget>
 
             {/* Mood Insights */}
-            {(insights.length > 0 || currentStep?.id === "pro-step-mood-insights") && (
+            {(insights.length > 0 ||
+              currentStep?.id === "pro-step-mood-insights") && (
               <TutorialTarget
                 id="mood-insights"
                 onLayout={(event) => {
@@ -1979,13 +1993,25 @@ export default function TrendsScreen({ isDevView }: { isDevView?: boolean }) {
       )}
 
       {/* Dev-only Add Entry Button */}
-      {__DEV__ && isDevView && (
-        <TouchableOpacity
-          style={styles.devButton}
-          onPress={() => setDevModalVisible(true)}
-        >
-          <ThemedText style={styles.devButtonText}>+ Add Test Entry</ThemedText>
-        </TouchableOpacity>
+      {__DEV__ && (
+        <>
+          <TouchableOpacity
+            style={styles.devButton}
+            onPress={() => setDevModalVisible(true)}
+          >
+            <ThemedText style={styles.devButtonText}>
+              + Add Test Entry
+            </ThemedText>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.devButton, { bottom: 80 }]}
+            onPress={() => void togglePro()}
+          >
+            <ThemedText style={styles.devButtonText}>
+              Pro: {isPro ? "ON" : "OFF"}
+            </ThemedText>
+          </TouchableOpacity>
+        </>
       )}
     </View>
   )

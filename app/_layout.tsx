@@ -7,13 +7,21 @@ import {
   DefaultTheme,
   ThemeProvider,
 } from "@react-navigation/native"
-import * as Notifications from "expo-notifications"
 import { Stack } from "expo-router"
 import { StatusBar } from "expo-status-bar"
 import * as SystemUI from "expo-system-ui"
 import { useEffect, useState } from "react"
 import { GestureHandlerRootView } from "react-native-gesture-handler"
 import "react-native-reanimated"
+
+let Notifications: typeof import("expo-notifications") | null = null
+
+try {
+  Notifications =
+    require("expo-notifications") as typeof import("expo-notifications")
+} catch (error) {
+  console.warn("expo-notifications is not available in this environment")
+}
 
 import { TutorialOverlay } from "@/components/tutorial/tutorial-overlay"
 import { OnboardingTutorialProvider } from "@/hooks/use-onboarding-tutorial"
@@ -49,6 +57,10 @@ export default function RootLayout() {
   useEffect(() => {
     // Initialize notification categories for expandable mood actions
     setupNotificationCategories()
+
+    if (!Notifications) {
+      return
+    }
 
     // Listen for notification responses (when user interacts with notification actions)
     const responseSubscription =

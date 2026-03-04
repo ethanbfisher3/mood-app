@@ -1,15 +1,16 @@
+import { useProSubscription } from "@/hooks/use-pro-subscription"
 import AsyncStorage from "@react-native-async-storage/async-storage"
 import {
-    createContext,
-    MutableRefObject,
-    PropsWithChildren,
-    RefObject,
-    useCallback,
-    useContext,
-    useEffect,
-    useMemo,
-    useRef,
-    useState,
+  createContext,
+  MutableRefObject,
+  PropsWithChildren,
+  RefObject,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
 } from "react"
 
 const ONBOARDING_COMPLETE_KEY = "@onboarding_tutorial_complete_v1"
@@ -54,6 +55,8 @@ export interface TutorialStep {
   targetId?: TutorialTargetId
   primaryLabel?: string
   cardPlacement?: TutorialCardPlacement
+  iosYOffset?: number
+  androidYOffset?: number
 }
 
 export interface MeasuredRect {
@@ -80,17 +83,8 @@ const ONBOARDING_STEPS: TutorialStep[] = [
     description:
       "This chart shows how your mood changes over time. Each bar represents logged moods for the selected period.",
     primaryLabel: "Next",
+    iosYOffset: -16,
   },
-//   {
-//     id: "step-distribution",
-//     kind: "spotlight",
-//     targetId: "mood-distribution",
-//     title: "Mood Distribution",
-//     description:
-//       "These bars show how often each mood appears. Larger percentages indicate patterns you can reflect on and improve.",
-//     primaryLabel: "Next",
-//     cardPlacement: "top",
-//   },
   {
     id: "step-notifications",
     kind: "spotlight",
@@ -99,6 +93,8 @@ const ONBOARDING_STEPS: TutorialStep[] = [
     description:
       "Use reminders to build a mood-tracking habit. We brought you to the Notifications page so you can configure them.",
     primaryLabel: "Next",
+    androidYOffset: -12,
+    iosYOffset: -12,
   },
   {
     id: "step-add-notification",
@@ -108,6 +104,8 @@ const ONBOARDING_STEPS: TutorialStep[] = [
     description:
       "Tap Add Reminder to set more times in your day. Then choose time and frequency that works for you.",
     primaryLabel: "Next",
+    androidYOffset: 4,
+    iosYOffset: 4,
   },
   {
     id: "step-pro-modal",
@@ -117,7 +115,8 @@ const ONBOARDING_STEPS: TutorialStep[] = [
     description:
       "Unlock advanced analytics, deeper insights, and multiple reminders for richer mood tracking.",
     primaryLabel: "Finish",
-    cardPlacement: "top",
+    cardPlacement: "center",
+    iosYOffset: -12,
   },
 ]
 
@@ -139,6 +138,8 @@ const PRO_TUTORIAL_STEPS: TutorialStep[] = [
     description:
       "As a Pro member, switch to Year view to analyze long-term mood trends.",
     primaryLabel: "Next",
+    iosYOffset: 96,
+    androidYOffset: 8,
   },
   {
     id: "pro-step-distribution",
@@ -148,6 +149,7 @@ const PRO_TUTORIAL_STEPS: TutorialStep[] = [
     description:
       "See how often each mood appears to spot your emotional patterns at a glance.",
     primaryLabel: "Next",
+    androidYOffset: 24,
   },
   {
     id: "pro-step-advanced-analytics",
@@ -157,6 +159,7 @@ const PRO_TUTORIAL_STEPS: TutorialStep[] = [
     description:
       "Use Deep Insights to understand best days, hardest days, streaks, and progress over time.",
     primaryLabel: "Next",
+    androidYOffset: 32,
   },
   {
     id: "pro-step-multiple-reminders",
@@ -166,6 +169,7 @@ const PRO_TUTORIAL_STEPS: TutorialStep[] = [
     description:
       "Pro lets you add extra reminder times so mood tracking fits your day.",
     primaryLabel: "Next",
+    androidYOffset: 4,
   },
   {
     id: "pro-step-mood-insights",
@@ -175,6 +179,7 @@ const PRO_TUTORIAL_STEPS: TutorialStep[] = [
     description:
       "Get richer interpretation of your mood patterns and trends from your logged history.",
     primaryLabel: "Next",
+    androidYOffset: 36,
   },
   {
     id: "pro-step-multiple-entries",
@@ -184,6 +189,8 @@ const PRO_TUTORIAL_STEPS: TutorialStep[] = [
     description:
       "Log more than one mood entry each day to capture emotional shifts throughout the day.",
     primaryLabel: "Finish",
+    iosYOffset: -15,
+    androidYOffset: -12,
   },
 ]
 
@@ -218,6 +225,8 @@ export function OnboardingTutorialProvider({ children }: PropsWithChildren) {
   const [isActive, setIsActive] = useState(false)
   const [currentFlow, setCurrentFlow] = useState<TutorialFlow>("onboarding")
   const [currentStepIndex, setCurrentStepIndex] = useState(0)
+
+  const { isPro } = useProSubscription()
 
   const targetRefs = useRef(
     new Map<TutorialTargetId, RefObject<any> | MutableRefObject<any | null>>(),
@@ -296,7 +305,9 @@ export function OnboardingTutorialProvider({ children }: PropsWithChildren) {
   const completeTutorial = useCallback(async () => {
     try {
       const key =
-        currentFlow === "pro" ? PRO_TUTORIAL_COMPLETE_KEY : ONBOARDING_COMPLETE_KEY
+        currentFlow === "pro"
+          ? PRO_TUTORIAL_COMPLETE_KEY
+          : ONBOARDING_COMPLETE_KEY
       await AsyncStorage.setItem(key, "true")
     } catch (error) {
       console.error("Failed to persist onboarding completion:", error)
@@ -313,13 +324,23 @@ export function OnboardingTutorialProvider({ children }: PropsWithChildren) {
 
   const nextStep = useCallback(async () => {
     setCurrentStepIndex((prev) => {
+      // If user is pro and we're at step-add-notification in onboarding, skip the upgrade step
+      if (
+        isPro &&
+        currentFlow === "onboarding" &&
+        activeSteps[prev]?.id === "step-add-notification"
+      ) {
+        void completeTutorial()
+        return prev
+      }
+
       if (prev >= activeSteps.length - 1) {
         void completeTutorial()
         return prev
       }
       return prev + 1
     })
-  }, [activeSteps.length, completeTutorial])
+  }, [activeSteps, completeTutorial, currentFlow, isPro])
 
   const startTutorial = useCallback(async (forceReplay = false) => {
     try {
@@ -335,30 +356,27 @@ export function OnboardingTutorialProvider({ children }: PropsWithChildren) {
     }
   }, [])
 
-  const startProTutorial = useCallback(
-    async (forceReplay = false) => {
-      let shouldStart = true
-      try {
-        if (forceReplay) {
-          await AsyncStorage.removeItem(PRO_TUTORIAL_COMPLETE_KEY)
-        } else {
-          const completed = await AsyncStorage.getItem(PRO_TUTORIAL_COMPLETE_KEY)
-          if (completed === "true") {
-            shouldStart = false
-          }
+  const startProTutorial = useCallback(async (forceReplay = false) => {
+    let shouldStart = true
+    try {
+      if (forceReplay) {
+        await AsyncStorage.removeItem(PRO_TUTORIAL_COMPLETE_KEY)
+      } else {
+        const completed = await AsyncStorage.getItem(PRO_TUTORIAL_COMPLETE_KEY)
+        if (completed === "true") {
+          shouldStart = false
         }
-      } catch (error) {
-        console.error("Failed to initialize pro tutorial:", error)
       }
+    } catch (error) {
+      console.error("Failed to initialize pro tutorial:", error)
+    }
 
-      if (shouldStart) {
-        setCurrentFlow("pro")
-        setCurrentStepIndex(0)
-        setIsActive(true)
-      }
-    },
-    [],
-  )
+    if (shouldStart) {
+      setCurrentFlow("pro")
+      setCurrentStepIndex(0)
+      setIsActive(true)
+    }
+  }, [])
 
   const setUpgradeHandler = useCallback((handler: UpgradeHandler | null) => {
     upgradeHandlerRef.current = handler
