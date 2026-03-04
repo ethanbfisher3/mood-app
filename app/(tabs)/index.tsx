@@ -1866,7 +1866,7 @@ export default function TrendsScreen({ isDevView }: { isDevView?: boolean }) {
       </Modal>
 
       {/* Dev-only Add Entry Modal */}
-      {__DEV__ && isDevView && (
+      {__DEV__ && (
         <Modal
           animationType="slide"
           transparent={true}
@@ -2873,6 +2873,7 @@ const styles = StyleSheet.create({
     marginTop: 10,
     alignItems: "center",
     paddingVertical: 8,
+    backgroundColor: "orange",
   },
   mockModeButtonText: {
     fontSize: 12,

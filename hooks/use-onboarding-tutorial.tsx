@@ -138,7 +138,7 @@ const PRO_TUTORIAL_STEPS: TutorialStep[] = [
     description:
       "As a Pro member, switch to Year view to analyze long-term mood trends.",
     primaryLabel: "Next",
-    iosYOffset: 96,
+    iosYOffset: -12,
     androidYOffset: 8,
   },
   {
@@ -170,6 +170,7 @@ const PRO_TUTORIAL_STEPS: TutorialStep[] = [
       "Pro lets you add extra reminder times so mood tracking fits your day.",
     primaryLabel: "Next",
     androidYOffset: 4,
+    iosYOffset: 4,
   },
   {
     id: "pro-step-mood-insights",
@@ -180,6 +181,7 @@ const PRO_TUTORIAL_STEPS: TutorialStep[] = [
       "Get richer interpretation of your mood patterns and trends from your logged history.",
     primaryLabel: "Next",
     androidYOffset: 36,
+    iosYOffset: 12,
   },
   {
     id: "pro-step-multiple-entries",
@@ -189,7 +191,7 @@ const PRO_TUTORIAL_STEPS: TutorialStep[] = [
     description:
       "Log more than one mood entry each day to capture emotional shifts throughout the day.",
     primaryLabel: "Finish",
-    iosYOffset: -15,
+    iosYOffset: -12,
     androidYOffset: -12,
   },
 ]

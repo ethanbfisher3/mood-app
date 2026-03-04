@@ -26,15 +26,10 @@ try {
 import { TutorialOverlay } from "@/components/tutorial/tutorial-overlay"
 import { OnboardingTutorialProvider } from "@/hooks/use-onboarding-tutorial"
 import { ProProvider } from "@/hooks/use-pro-subscription"
-import {
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  useColorScheme,
-} from "react-native"
+import { StyleSheet, useColorScheme } from "react-native"
 
-// Configure how notifications are handled when the app is in the foreground
-Notifications.setNotificationHandler({
+// Configure how notifications are handled when the app is in the foregrounds
+Notifications!.setNotificationHandler({
   handleNotification: async () => ({
     shouldShowAlert: true,
     shouldPlaySound: true,
@@ -97,21 +92,6 @@ export default function RootLayout() {
             </Stack>
             <StatusBar style="auto" />
             <TutorialOverlay />
-
-            {/* Dev/Prod View Toggle Button */}
-            {__DEV__ && (
-              <TouchableOpacity
-                style={[
-                  styles.devViewToggleButton,
-                  !isDevView && styles.devViewToggleProd,
-                ]}
-                onPress={() => setIsDevView((v) => !v)}
-              >
-                <Text style={styles.devViewToggleText}>
-                  {isDevView ? "DEV" : "PROD"}
-                </Text>
-              </TouchableOpacity>
-            )}
           </OnboardingTutorialProvider>
         </ProProvider>
       </ThemeProvider>

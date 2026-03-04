@@ -469,7 +469,7 @@ export default function NotificationsScreen({
         </ThemedView>
 
         {/* Permission Status */}
-        {__DEV__ && isDevView && (
+        {__DEV__ && (
           <ThemedView style={styles.statusSection}>
             <ThemedText type="subtitle" style={styles.statusTitle}>
               Status
@@ -675,7 +675,7 @@ const styles = StyleSheet.create({
     opacity: 0.8,
   },
   statusSection: {
-    backgroundColor: "rgba(150, 150, 150, 0.05)",
+    backgroundColor: "orange",
     borderRadius: 16,
     padding: 16,
     marginBottom: 24,
