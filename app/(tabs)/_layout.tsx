@@ -2,9 +2,10 @@ import { HapticTab } from "@/components/haptic-tab"
 import { IconSymbol } from "@/components/ui/icon-symbol"
 import { Colors } from "@/constants/theme"
 import { useColorScheme } from "@/hooks/use-color-scheme"
-import { useProSubscription } from "@/hooks/use-pro-subscription"
-import React, { useCallback, useRef, useState } from "react"
-import { StyleSheet, Text, TouchableOpacity, View } from "react-native"
+import { useOnboardingTutorial } from "@/hooks/use-onboarding-tutorial"
+import { usePathname, useRouter } from "expo-router"
+import { useCallback, useEffect, useRef, useState } from "react"
+import { StyleSheet, Text, View } from "react-native"
 import PagerView from "react-native-pager-view"
 import { SafeAreaView } from "react-native-safe-area-context"
 
@@ -16,12 +17,13 @@ const TABS = [
   { key: "notifications", title: "Reminders", icon: "bell.fill" as const },
 ]
 
-export default function TabLayout() {
-  const colorScheme = useColorScheme()
+export default function TabLayout({ isDevView }: { isDevView: boolean }) {
+  const router = useRouter()
+  const pathname = usePathname()
+  let colorScheme = useColorScheme()
   const pagerRef = useRef<PagerView>(null)
   const [currentPage, setCurrentPage] = useState(0)
-  const [isDevView, setIsDevView] = useState(true)
-  const { isPro, togglePro } = useProSubscription()
+  const { isActive, currentStep } = useOnboardingTutorial()
 
   const handlePageSelected = useCallback(
     (e: { nativeEvent: { position: number } }) => {
@@ -38,6 +40,46 @@ export default function TabLayout() {
   const inactiveColor = colorScheme === "dark" ? "#8E8E93" : "#999"
   const backgroundColor = colorScheme === "dark" ? "#000" : "#fff"
   const tabBarBackground = colorScheme === "dark" ? "#1C1C1E" : "#F2F2F7"
+
+  useEffect(() => {
+    if (!isActive || !currentStep) {
+      return
+    }
+
+    const trendsStepIds = new Set([
+      "step-mood-chart",
+      "step-pro-modal",
+      "step-distribution",
+      "pro-step-thanks",
+      "pro-step-year-view",
+      "pro-step-distribution",
+      "pro-step-advanced-analytics",
+      "pro-step-mood-insights",
+      "pro-step-multiple-entries",
+    ])
+
+    const remindersStepIds = new Set([
+      "step-notifications",
+      "step-add-notification",
+      "pro-step-multiple-reminders",
+    ])
+
+    if (trendsStepIds.has(currentStep.id)) {
+      pagerRef.current?.setPage(0)
+      if (pathname === "/distribution") {
+        router.replace("/")
+      }
+      return
+    }
+
+    if (remindersStepIds.has(currentStep.id)) {
+      pagerRef.current?.setPage(1)
+      if (pathname === "/distribution") {
+        router.replace("/")
+      }
+      return
+    }
+  }, [isActive, currentStep, pathname, router])
 
   return (
     <SafeAreaView
@@ -59,34 +101,6 @@ export default function TabLayout() {
         </View>
       </PagerView>
 
-      {/* Dev-only Pro Toggle Button */}
-      {__DEV__ && (
-        <TouchableOpacity
-          style={[styles.devViewToggleButton, styles.devProToggleButton]}
-          onPress={async () => {
-            await togglePro()
-          }}
-        >
-          <Text style={styles.devViewToggleText}>
-            {isPro ? "⭐ Disable Pro" : "⭐ Enable Pro"}
-          </Text>
-        </TouchableOpacity>
-      )}
-
-      {/* Dev/Prod View Toggle Button */}
-      {__DEV__ && (
-        <TouchableOpacity
-          style={[
-            styles.devViewToggleButton,
-            !isDevView && styles.devViewToggleProd,
-          ]}
-          onPress={() => setIsDevView((v) => !v)}
-        >
-          <Text style={styles.devViewToggleText}>
-            {isDevView ? "🛠️ DEV" : "📱 PROD"}
-          </Text>
-        </TouchableOpacity>
-      )}
 
       {/* Custom Tab Bar */}
       <View style={[styles.tabBar, { backgroundColor: tabBarBackground }]}>
@@ -136,32 +150,5 @@ const styles = StyleSheet.create({
     fontSize: 10,
     marginTop: 4,
     fontWeight: "500",
-  },
-  devViewToggleButton: {
-    position: "absolute",
-    bottom: 80,
-    left: 20,
-    backgroundColor: "#FF9800",
-    paddingVertical: 8,
-    paddingHorizontal: 14,
-    borderRadius: 20,
-    elevation: 4,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.25,
-    shadowRadius: 4,
-    zIndex: 999,
-  },
-  devViewToggleProd: {
-    backgroundColor: "#4CAF50",
-  },
-  devProToggleButton: {
-    bottom: 120,
-    backgroundColor: "#9C27B0",
-  },
-  devViewToggleText: {
-    color: "white",
-    fontWeight: "600",
-    fontSize: 14,
   },
 })

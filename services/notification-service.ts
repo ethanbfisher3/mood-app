@@ -1,6 +1,14 @@
 import { MOOD_OPTIONS, MoodType } from "@/constants/moods"
 import AsyncStorage from "@react-native-async-storage/async-storage"
-import * as Notifications from "expo-notifications"
+
+let Notifications: typeof import("expo-notifications") | null = null
+
+try {
+  Notifications =
+    require("expo-notifications") as typeof import("expo-notifications")
+} catch (error) {
+  console.warn("expo-notifications is not available in this environment")
+}
 
 const MOOD_STORAGE_KEY = "@mood_entries"
 const MOOD_CATEGORY_ID = "mood_reminder"
@@ -10,16 +18,16 @@ const MOOD_CATEGORY_ID = "mood_reminder"
  * This enables expandable notifications where users can set their mood directly.
  */
 export async function setupNotificationCategories(): Promise<void> {
+  if (!Notifications) return
+
   // Create action buttons for each mood option
-  const moodActions: Notifications.NotificationAction[] = MOOD_OPTIONS.map(
-    (mood) => ({
-      identifier: `mood_${mood.type}`,
-      buttonTitle: `${mood.emoji} ${mood.label}`,
-      options: {
-        opensAppToForeground: false, // Keep app in background after selection
-      },
-    }),
-  )
+  const moodActions: any[] = MOOD_OPTIONS.map((mood) => ({
+    identifier: `mood_${mood.type}`,
+    buttonTitle: `${mood.label}`,
+    options: {
+      opensAppToForeground: false, // Keep app in background after selection
+    },
+  }))
 
   // Set up the notification category with all mood actions
   await Notifications.setNotificationCategoryAsync(
@@ -78,9 +86,10 @@ export async function saveMoodFromNotification(
 /**
  * Handle notification response (when user interacts with notification actions)
  */
-export function handleNotificationResponse(
-  response: Notifications.NotificationResponse,
-): { handled: boolean; moodType?: MoodType } {
+export function handleNotificationResponse(response: any): {
+  handled: boolean
+  moodType?: MoodType
+} {
   const actionIdentifier = response.actionIdentifier
 
   // Check if this is a mood action
@@ -92,11 +101,11 @@ export function handleNotificationResponse(
     if (validMood) {
       // Save the mood asynchronously
       saveMoodFromNotification(moodType).then((success) => {
-        if (success) {
+        if (success && Notifications) {
           // Schedule a confirmation notification
           Notifications.scheduleNotificationAsync({
             content: {
-              title: `${validMood.emoji} Mood logged!`,
+              title: `Mood logged!`,
               body: `You're feeling ${validMood.label.toLowerCase()} today. Keep tracking!`,
               sound: false,
             },
@@ -117,7 +126,7 @@ export function handleNotificationResponse(
  */
 export function createMoodReminderContent(): Notifications.NotificationContentInput {
   return {
-    title: "How are you feeling today? 🌟",
+    title: "How are you feeling today?",
     body: "Tap to open the app, or expand to quickly log your mood.",
     sound: true,
     categoryIdentifier: MOOD_CATEGORY_ID,

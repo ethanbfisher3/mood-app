@@ -7,18 +7,29 @@ import {
   DefaultTheme,
   ThemeProvider,
 } from "@react-navigation/native"
-import * as Notifications from "expo-notifications"
 import { Stack } from "expo-router"
 import { StatusBar } from "expo-status-bar"
 import * as SystemUI from "expo-system-ui"
-import { useEffect } from "react"
+import { useEffect, useState } from "react"
 import { GestureHandlerRootView } from "react-native-gesture-handler"
 import "react-native-reanimated"
 
-import { useColorScheme } from "@/hooks/use-color-scheme"
+let Notifications: typeof import("expo-notifications") | null = null
 
-// Configure how notifications are handled when the app is in the foreground
-Notifications.setNotificationHandler({
+try {
+  Notifications =
+    require("expo-notifications") as typeof import("expo-notifications")
+} catch (error) {
+  console.warn("expo-notifications is not available in this environment")
+}
+
+import { TutorialOverlay } from "@/components/tutorial/tutorial-overlay"
+import { OnboardingTutorialProvider } from "@/hooks/use-onboarding-tutorial"
+import { ProProvider } from "@/hooks/use-pro-subscription"
+import { StyleSheet, useColorScheme } from "react-native"
+
+// Configure how notifications are handled when the app is in the foregrounds
+Notifications!.setNotificationHandler({
   handleNotification: async () => ({
     shouldShowAlert: true,
     shouldPlaySound: true,
@@ -28,12 +39,9 @@ Notifications.setNotificationHandler({
   }),
 })
 
-export const unstable_settings = {
-  anchor: "(tabs)",
-}
-
 export default function RootLayout() {
   const colorScheme = useColorScheme()
+  const [isDevView, setIsDevView] = useState(true)
 
   // Set the root background color to match the app background
   useEffect(() => {
@@ -44,6 +52,10 @@ export default function RootLayout() {
   useEffect(() => {
     // Initialize notification categories for expandable mood actions
     setupNotificationCategories()
+
+    if (!Notifications) {
+      return
+    }
 
     // Listen for notification responses (when user interacts with notification actions)
     const responseSubscription =
@@ -66,15 +78,53 @@ export default function RootLayout() {
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <ThemeProvider value={colorScheme === "dark" ? DarkTheme : DefaultTheme}>
-        <Stack>
-          <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-          <Stack.Screen
-            name="modal"
-            options={{ presentation: "modal", title: "Modal" }}
-          />
-        </Stack>
-        <StatusBar style="auto" />
+        <ProProvider>
+          <OnboardingTutorialProvider>
+            <Stack>
+              <Stack.Screen
+                name="(tabs)"
+                options={{ headerShown: false, isDevView }}
+              />
+              <Stack.Screen
+                name="modal"
+                options={{ presentation: "modal", title: "Modal" }}
+              />
+            </Stack>
+            <StatusBar style="auto" />
+            <TutorialOverlay />
+          </OnboardingTutorialProvider>
+        </ProProvider>
       </ThemeProvider>
     </GestureHandlerRootView>
   )
 }
+
+const styles = StyleSheet.create({
+  devViewToggleButton: {
+    position: "absolute",
+    bottom: 80,
+    left: 20,
+    backgroundColor: "#FF9800",
+    paddingVertical: 8,
+    paddingHorizontal: 14,
+    borderRadius: 20,
+    elevation: 4,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+    zIndex: 999,
+  },
+  devViewToggleLightMode: {
+    backgroundColor: "#2196F3",
+    bottom: 160,
+  },
+  devViewToggleProd: {
+    backgroundColor: "#4CAF50",
+  },
+  devViewToggleText: {
+    color: "white",
+    fontWeight: "600",
+    fontSize: 14,
+  },
+})

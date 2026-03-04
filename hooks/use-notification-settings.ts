@@ -3,8 +3,16 @@ import {
   setupNotificationCategories,
 } from "@/services/notification-service"
 import AsyncStorage from "@react-native-async-storage/async-storage"
-import * as Notifications from "expo-notifications"
 import { useCallback, useEffect, useState } from "react"
+
+let Notifications: typeof import("expo-notifications") | null = null
+
+try {
+  Notifications =
+    require("expo-notifications") as typeof import("expo-notifications")
+} catch (error) {
+  console.warn("expo-notifications is not available in this environment")
+}
 
 const NOTIFICATION_SETTINGS_KEY = "@notification_settings"
 const EXTRA_REMINDERS_KEY = "@extra_reminder_settings"
@@ -55,6 +63,9 @@ export function useNotificationSettings() {
 
   // Check notification permissions
   const checkPermissions = useCallback(async () => {
+    if (!Notifications) {
+      return false
+    }
     const { status } = await Notifications.getPermissionsAsync()
     setHasPermission(status === "granted")
     return status === "granted"
@@ -62,6 +73,9 @@ export function useNotificationSettings() {
 
   // Request notification permissions
   const requestPermissions = useCallback(async () => {
+    if (!Notifications) {
+      return false
+    }
     const { status } = await Notifications.requestPermissionsAsync()
     setHasPermission(status === "granted")
     return status === "granted"
@@ -77,6 +91,10 @@ export function useNotificationSettings() {
   // Schedule daily notification with mood action buttons
   const scheduleNotification = useCallback(
     async (hour: number, minute: number) => {
+      if (!Notifications) {
+        return
+      }
+
       // Cancel existing notifications first
       await Notifications.cancelAllScheduledNotificationsAsync()
 
@@ -87,7 +105,7 @@ export function useNotificationSettings() {
       await Notifications.scheduleNotificationAsync({
         content: createMoodReminderContent(),
         trigger: {
-          type: Notifications.SchedulableTriggerInputTypes.DAILY,
+          type: (Notifications as any).SchedulableTriggerInputTypes.DAILY,
           hour,
           minute,
         },
@@ -102,7 +120,7 @@ export function useNotificationSettings() {
             await Notifications.scheduleNotificationAsync({
               content: createMoodReminderContent(),
               trigger: {
-                type: Notifications.SchedulableTriggerInputTypes.DAILY,
+                type: (Notifications as any).SchedulableTriggerInputTypes.DAILY,
                 hour: extra.hour,
                 minute: extra.minute,
               },
@@ -130,7 +148,9 @@ export function useNotificationSettings() {
             await scheduleNotification(newSettings.hour, newSettings.minute)
           }
         } else {
-          await Notifications.cancelAllScheduledNotificationsAsync()
+          if (Notifications) {
+            await Notifications.cancelAllScheduledNotificationsAsync()
+          }
         }
 
         return true

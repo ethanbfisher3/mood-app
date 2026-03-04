@@ -1,7 +1,8 @@
 import Ionicons from "@expo/vector-icons/Ionicons"
 import { useRouter } from "expo-router"
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import {
+  ActivityIndicator,
   Alert,
   Image,
   Keyboard,
@@ -18,8 +19,10 @@ import {
 import { Calendar } from "react-native-calendars"
 import { Swipeable } from "react-native-gesture-handler"
 
+import { EntryCard } from "@/components/entry-card"
 import { ThemedText } from "@/components/themed-text"
 import { ThemedView } from "@/components/themed-view"
+import { TutorialTarget } from "@/components/tutorial/tutorial-target"
 import {
   getMoodOption,
   MOOD_OPTIONS,
@@ -27,6 +30,7 @@ import {
   MoodType,
 } from "@/constants/moods"
 import { useMoodStorage } from "@/hooks/use-mood-storage"
+import { useOnboardingTutorial } from "@/hooks/use-onboarding-tutorial"
 import { PRO_FEATURES, useProSubscription } from "@/hooks/use-pro-subscription"
 import { useThemeColor } from "@/hooks/use-theme-color"
 import { computeMoodDistribution } from "@/lib/mood-distribution"
@@ -52,14 +56,33 @@ export default function TrendsScreen({ isDevView }: { isDevView?: boolean }) {
   const [isSaving, setIsSaving] = useState(false)
   const [zoomLevel, setZoomLevel] = useState(1)
   const [selectedBarIndex, setSelectedBarIndex] = useState<number | null>(null)
+  const [selectedMoodType, setSelectedMoodType] = useState<MoodType | null>(
+    null,
+  )
   const [chartOffset, setChartOffset] = useState(0) // 0 = current period, negative = past
   const [devModalVisible, setDevModalVisible] = useState(false)
   const [devSelectedMoods, setDevSelectedMoods] = useState<MoodType[]>([])
   const [devDate, setDevDate] = useState("")
   const [editingEntryId, setEditingEntryId] = useState<string | null>(null)
   const [upgradeModalVisible, setUpgradeModalVisible] = useState(false)
+  const {
+    setUpgradeHandler,
+    isActive,
+    currentStep,
+    startProTutorial,
+    measureTarget,
+  } = useOnboardingTutorial()
 
-  const { isPro, togglePro } = useProSubscription()
+  const {
+    isPro,
+    buyPro,
+    restorePurchases,
+    purchaseLoading,
+    purchaseError,
+    mockIapEnabled,
+    toggleMockIapMode,
+    togglePro,
+  } = useProSubscription()
 
   const backgroundColor = useThemeColor({}, "background")
   const textColor = useThemeColor({}, "text")
@@ -69,7 +92,16 @@ export default function TrendsScreen({ isDevView }: { isDevView?: boolean }) {
   const rightGridScrollRef = useRef<ScrollView | null>(null)
   const rightHorizontalRef = useRef<ScrollView | null>(null)
   const labelScrollRef = useRef<ScrollView | null>(null)
+  const mainScrollRef = useRef<ScrollView | null>(null)
+  const currentMainScrollYRef = useRef(0)
   const isSyncingScroll = useRef(false)
+  const previousIsProRef = useRef(isPro)
+  const [chartSectionY, setChartSectionY] = useState<number>(0)
+  const [yearViewSectionY, setYearViewSectionY] = useState<number>(0)
+  const [distributionSectionY, setDistributionSectionY] = useState<number>(0)
+  const [advancedAnalyticsSectionY, setAdvancedAnalyticsSectionY] = useState(0)
+  const [moodInsightsSectionY, setMoodInsightsSectionY] = useState(0)
+  const [multiEntriesSectionY, setMultiEntriesSectionY] = useState(0)
 
   const onLeftGridScroll = (e: any) => {
     if (isSyncingScroll.current) {
@@ -108,15 +140,130 @@ export default function TrendsScreen({ isDevView }: { isDevView?: boolean }) {
     }
   }, [])
 
-  // Helper to normalize moods for an entry
-  const getEntryMoods = (e: MoodEntry) => {
-    // @ts-ignore - support legacy `mood` and new `moods`
-    if (Array.isArray((e as any).moods) && (e as any).moods.length > 0)
-      return (e as any).moods as MoodType[]
-    // @ts-ignore
-    if ((e as any).mood) return [(e as any).mood as MoodType]
-    return []
-  }
+  useEffect(() => {
+    setUpgradeHandler(() => setUpgradeModalVisible(true))
+    return () => setUpgradeHandler(null)
+  }, [setUpgradeHandler])
+
+  useEffect(() => {
+    if (isPro && !previousIsProRef.current) {
+      void startProTutorial()
+    }
+    previousIsProRef.current = isPro
+  }, [isPro, startProTutorial])
+
+  useEffect(() => {
+    if (!isActive || !currentStep) {
+      return
+    }
+
+    const scrollTo = (y: number) => {
+      mainScrollRef.current?.scrollTo({
+        y: Math.max(y - 116, 0),
+        animated: true,
+      })
+    }
+
+    const scrollToTarget = async (
+      targetId:
+        | "mood-chart"
+        | "year-view"
+        | "mood-distribution"
+        | "advanced-analytics"
+        | "mood-insights"
+        | "multi-entries",
+      fallbackY: number,
+    ) => {
+      const rect = await measureTarget(targetId)
+      if (rect) {
+        const absoluteY = currentMainScrollYRef.current + rect.y
+        scrollTo(absoluteY)
+        return
+      }
+      scrollTo(fallbackY)
+    }
+
+    if (currentStep.id === "step-mood-chart") {
+      void scrollToTarget("mood-chart", chartSectionY)
+      const timer = setTimeout(
+        () => void scrollToTarget("mood-chart", chartSectionY),
+        260,
+      )
+      return () => clearTimeout(timer)
+    }
+
+    if (currentStep.id === "pro-step-year-view") {
+      if (timeRange !== "year") {
+        setTimeRange("year")
+      }
+      void scrollToTarget("year-view", yearViewSectionY)
+      const timer = setTimeout(
+        () => void scrollToTarget("year-view", yearViewSectionY),
+        320,
+      )
+      return () => clearTimeout(timer)
+    }
+
+    if (
+      currentStep.id === "step-distribution" ||
+      currentStep.id === "pro-step-distribution"
+    ) {
+      void scrollToTarget("mood-distribution", distributionSectionY)
+      const timer = setTimeout(
+        () => void scrollToTarget("mood-distribution", distributionSectionY),
+        320,
+      )
+      return () => clearTimeout(timer)
+    }
+
+    if (currentStep.id === "step-pro-modal") {
+      mainScrollRef.current?.scrollToEnd({ animated: true })
+      const timer = setTimeout(
+        () => mainScrollRef.current?.scrollToEnd({ animated: true }),
+        220,
+      )
+      return () => clearTimeout(timer)
+    }
+
+    if (currentStep.id === "pro-step-advanced-analytics") {
+      void scrollToTarget("advanced-analytics", advancedAnalyticsSectionY)
+      const timer = setTimeout(
+        () =>
+          void scrollToTarget("advanced-analytics", advancedAnalyticsSectionY),
+        320,
+      )
+      return () => clearTimeout(timer)
+    }
+
+    if (currentStep.id === "pro-step-mood-insights") {
+      void scrollToTarget("mood-insights", moodInsightsSectionY)
+      const timer = setTimeout(
+        () => void scrollToTarget("mood-insights", moodInsightsSectionY),
+        320,
+      )
+      return () => clearTimeout(timer)
+    }
+
+    if (currentStep.id === "pro-step-multiple-entries") {
+      void scrollToTarget("multi-entries", multiEntriesSectionY)
+      const timer = setTimeout(
+        () => void scrollToTarget("multi-entries", multiEntriesSectionY),
+        260,
+      )
+      return () => clearTimeout(timer)
+    }
+  }, [
+    isActive,
+    currentStep,
+    chartSectionY,
+    yearViewSectionY,
+    distributionSectionY,
+    advancedAnalyticsSectionY,
+    moodInsightsSectionY,
+    multiEntriesSectionY,
+    timeRange,
+    measureTarget,
+  ])
 
   // Load today's mood when modal opens
   const openMoodModal = useCallback(() => {
@@ -128,7 +275,7 @@ export default function TrendsScreen({ isDevView }: { isDevView?: boolean }) {
     } else {
       const todaysMood = getTodaysMood()
       if (todaysMood) {
-        setSelectedMoods(getEntryMoods(todaysMood))
+        setSelectedMoods(todaysMood.moods)
         setNote(todaysMood.note || "")
       } else {
         setSelectedMoods([])
@@ -138,19 +285,10 @@ export default function TrendsScreen({ isDevView }: { isDevView?: boolean }) {
     setModalVisible(true)
   }, [getTodaysMood, isPro])
 
-  const getEntryAverageValue = (e: MoodEntry) => {
-    const moods: MoodType[] = getEntryMoods(e)
-    if (moods.length === 0) return 3
-    const vals = moods.map(
-      (m) => MOOD_OPTIONS.find((o) => o.type === m)?.value ?? 3,
-    )
-    return vals.reduce((a, b) => a + b, 0) / vals.length
-  }
-
   // Open modal to edit a specific entry
   const openEditMoodModal = useCallback((entry: MoodEntry) => {
     setEditingEntryId(entry.id)
-    setSelectedMoods(getEntryMoods(entry))
+    setSelectedMoods(entry.moods)
     setNote(entry.note || "")
     setModalVisible(true)
   }, [])
@@ -241,16 +379,13 @@ export default function TrendsScreen({ isDevView }: { isDevView?: boolean }) {
   // Calculate stats
   const stats = useMemo(() => {
     if (filteredEntries.length === 0) {
-      return { avgMood: 0, mostCommon: null, streak: 0 }
+      return { mostCommon: null, streak: 0 }
     }
-
-    const moodValues = filteredEntries.map((e) => getEntryAverageValue(e))
-    const avgMood = moodValues.reduce((a, b) => a + b, 0) / moodValues.length
 
     // Most common mood
     const moodCounts: Record<string, number> = {}
-    filteredEntries.forEach((e) => {
-      getEntryMoods(e).forEach((m) => {
+    filteredEntries.forEach((e: MoodEntry) => {
+      e.moods.forEach((m) => {
         moodCounts[m] = (moodCounts[m] || 0) + 1
       })
     })
@@ -278,7 +413,7 @@ export default function TrendsScreen({ isDevView }: { isDevView?: boolean }) {
       }
     }
 
-    return { avgMood, mostCommon, streak }
+    return { mostCommon, streak }
   }, [filteredEntries, entries])
 
   // Advanced analytics (Pro feature)
@@ -316,8 +451,7 @@ export default function TrendsScreen({ isDevView }: { isDevView?: boolean }) {
       const [y, m, d] = e.date.split("-").map(Number)
       const day = new Date(y, m - 1, d).getDay()
       if (!dayMoods[day]) dayMoods[day] = []
-      const val = getEntryAverageValue(e)
-      dayMoods[day].push(val)
+      dayMoods[day].push(...e.moods.map((mood) => getMoodOption(mood).value))
     })
     let bestDay: string | null = null
     let worstDay: string | null = null
@@ -337,7 +471,12 @@ export default function TrendsScreen({ isDevView }: { isDevView?: boolean }) {
     })
 
     // Mood variability (standard deviation)
-    const allValues = entries.map((e) => getEntryAverageValue(e))
+    const allValues = entries.map(
+      (e) =>
+        e.moods
+          .map((mood) => getMoodOption(mood).value)
+          .reduce((a, b) => a + b, 0) / e.moods.length,
+    )
     const mean = allValues.reduce((a, b) => a + b, 0) / allValues.length
     const variance =
       allValues.reduce((sum, v) => sum + Math.pow(v - mean, 2), 0) /
@@ -371,54 +510,15 @@ export default function TrendsScreen({ isDevView }: { isDevView?: boolean }) {
     }
   }, [entries])
 
-  // AI Mood Insights (Pro feature)
+  // Mood Insights (Pro feature)
   const insights = useMemo(() => {
     const result: { emoji: string; text: string }[] = []
     if (entries.length < 3) return result
 
-    // Streak insight
-    if (stats.streak >= 7) {
-      result.push({
-        emoji: "🔥",
-        text: `Amazing! You're on a ${stats.streak}-day streak. Consistency is key to understanding your emotions.`,
-      })
-    } else if (stats.streak >= 3) {
-      result.push({
-        emoji: "👏",
-        text: `Nice ${stats.streak}-day streak! Keep logging daily to build a clear picture of your mood patterns.`,
-      })
-    }
-
-    // Trend insight - compare recent week to overall
-    const recentEntries = entries.filter((e) => {
-      const d = new Date(e.date)
-      const now = new Date()
-      return (now.getTime() - d.getTime()) / (1000 * 60 * 60 * 24) <= 7
-    })
-    if (recentEntries.length >= 3 && entries.length >= 10) {
-      const recentAvg =
-        recentEntries
-          .map((e) => getEntryAverageValue(e))
-          .reduce((a, b) => a + b, 0) / recentEntries.length
-      const overallAvg = stats.avgMood
-      const diff = recentAvg - overallAvg
-      if (diff > 0.5) {
-        result.push({
-          emoji: "📈",
-          text: `Your mood this week is trending higher than your average. Whatever you're doing, keep it up!`,
-        })
-      } else if (diff < -0.5) {
-        result.push({
-          emoji: "💙",
-          text: `Your mood has been a bit lower this week compared to your average. Consider activities that usually lift your spirits.`,
-        })
-      }
-    }
-
     // Best day insight
     if (advancedStats.bestDayOfWeek) {
       result.push({
-        emoji: "☀️",
+        emoji: require("@/assets/images/app_emoji/best.png"),
         text: `${advancedStats.bestDayOfWeek}s tend to be your best days. Plan activities you enjoy on your harder days!`,
       })
     }
@@ -426,12 +526,12 @@ export default function TrendsScreen({ isDevView }: { isDevView?: boolean }) {
     // Variability insight
     if (advancedStats.moodVariability > 1.2) {
       result.push({
-        emoji: "🎢",
+        emoji: require("@/assets/images/app_emoji/stressed.png"),
         text: `Your moods show significant variation. Journaling notes with your entries may help identify triggers.`,
       })
     } else if (advancedStats.moodVariability < 0.5 && entries.length >= 7) {
       result.push({
-        emoji: "⚖️",
+        emoji: require("@/assets/images/app_emoji/relieved.png"),
         text: `Your mood has been quite stable. This consistency suggests good emotional balance.`,
       })
     }
@@ -442,12 +542,12 @@ export default function TrendsScreen({ isDevView }: { isDevView?: boolean }) {
     )
     if (entriesWithNotes.length === 0 && entries.length >= 5) {
       result.push({
-        emoji: "📝",
+        emoji: require("@/assets/images/app_emoji/notes.png"),
         text: `Try adding notes to your mood entries — it helps you reflect on what influences your feelings.`,
       })
     } else if (entriesWithNotes.length > entries.length * 0.5) {
       result.push({
-        emoji: "✍️",
+        emoji: require("@/assets/images/app_emoji/notes.png"),
         text: `Great job adding notes! Your reflections make your mood data much more meaningful.`,
       })
     }
@@ -455,13 +555,36 @@ export default function TrendsScreen({ isDevView }: { isDevView?: boolean }) {
     // Longest streak
     if (advancedStats.longestStreak >= 14) {
       result.push({
-        emoji: "🏆",
+        emoji: require("@/assets/images/app_emoji/streak.png"),
         text: `Your all-time longest streak is ${advancedStats.longestStreak} days. Incredible dedication!`,
       })
     }
 
     return result.slice(0, 4) // Max 4 insights
   }, [entries, stats, advancedStats])
+
+  const fullMoodDistribution = useMemo(() => {
+    const byMood = new Map(
+      advancedStats.moodDistribution.map((item) => [item.mood, item]),
+    )
+
+    return MOOD_OPTIONS.map((mood) => {
+      const existing = byMood.get(mood.type)
+      return {
+        mood: mood.type,
+        count: existing?.count ?? 0,
+        percentage: existing?.percentage ?? 0,
+      }
+    }).sort((a, b) => {
+      if (b.count !== a.count) {
+        return b.count - a.count
+      }
+      return (
+        MOOD_OPTIONS.findIndex((m) => m.type === a.mood) -
+        MOOD_OPTIONS.findIndex((m) => m.type === b.mood)
+      )
+    })
+  }, [advancedStats.moodDistribution])
 
   // Export mood data as CSV
   const handleExportCSV = useCallback(async () => {
@@ -502,49 +625,25 @@ export default function TrendsScreen({ isDevView }: { isDevView?: boolean }) {
 
   // Generate chart data points
   const chartData = useMemo(() => {
-    const data: { date: string; value: number | null; entry?: MoodEntry }[] = []
+    const data: { date: string; entry?: MoodEntry }[] = []
 
     if (timeRange === "year") {
-      // For year view, show 12 months ending at the current month (with offset)
+      // For year view, always show January through December of the current year (with offset)
       const now = new Date()
-      // Calculate the end month based on offset (each offset step = 12 months)
-      const endDate = new Date(
-        now.getFullYear() + chartOffset,
-        now.getMonth(),
-        1,
-      )
-      const endMonth = endDate.getMonth()
-      const endYear = endDate.getFullYear()
+      const year = now.getFullYear() + chartOffset
 
-      // Start 11 months before the end month
-      const startDate = new Date(endYear, endMonth - 11, 1)
-      const startMonth = startDate.getMonth()
-      const startYear = startDate.getFullYear()
-
-      // Generate 12 months of data
-      for (let i = 0; i < 12; i++) {
-        const monthIndex = (startMonth + i) % 12
-        const year = startYear + Math.floor((startMonth + i) / 12)
-
+      // Generate 12 months starting from January
+      for (let month = 0; month < 12; month++) {
         // Find entries for this month
         const monthEntries = entries.filter((e) => {
           const entryDate = new Date(e.date)
           return (
-            entryDate.getMonth() === monthIndex &&
-            entryDate.getFullYear() === year
+            entryDate.getMonth() === month && entryDate.getFullYear() === year
           )
         })
 
-        // Calculate average mood for the month (support multi-mood entries)
-        let avgValue: number | null = null
-        if (monthEntries.length > 0) {
-          const values = monthEntries.map((e) => getEntryAverageValue(e))
-          avgValue = values.reduce((a, b) => a + b, 0) / values.length
-        }
-
         data.push({
-          date: `${year}-${String(monthIndex + 1).padStart(2, "0")}`,
-          value: avgValue,
+          date: `${year}-${String(month + 1).padStart(2, "0")}`,
           entry: monthEntries[0], // Just for reference
         })
       }
@@ -567,25 +666,28 @@ export default function TrendsScreen({ isDevView }: { isDevView?: boolean }) {
 
         data.push({
           date: dateStr,
-          value: entry ? getEntryAverageValue(entry) : null,
           entry,
         })
       }
     } else {
-      // Week view - daily data for target week (with offset)
+      // Week view - always start on Monday
       const days = rangeConfig[timeRange].days
-      const endDate = new Date()
-      endDate.setDate(endDate.getDate() + chartOffset * 7)
+      const today = new Date()
+      today.setDate(today.getDate() + chartOffset * 7)
 
-      for (let i = days - 1; i >= 0; i--) {
-        const date = new Date(endDate)
-        date.setDate(endDate.getDate() - i)
+      // Find Monday of the current week (0 = Sunday, 1 = Monday)
+      const dayOfWeek = today.getDay()
+      const diff = today.getDate() - dayOfWeek + (dayOfWeek === 0 ? -6 : 1)
+      const monday = new Date(today.setDate(diff))
+
+      for (let i = 0; i < days; i++) {
+        const date = new Date(monday)
+        date.setDate(monday.getDate() + i)
         const dateStr = date.toISOString().split("T")[0]
         const entry = filteredEntries.find((e) => e.date === dateStr)
 
         data.push({
           date: dateStr,
-          value: entry ? getEntryAverageValue(entry) : null,
           entry,
         })
       }
@@ -627,8 +729,9 @@ export default function TrendsScreen({ isDevView }: { isDevView?: boolean }) {
     // Check for entries before/after current view
     let hasBefore = false
     if (timeRange === "year") {
-      // For year view, startDate is "YYYY-MM", so compare with first day of that month
-      hasBefore = entries.some((e) => e.date < startDate + "-01")
+      // For year view, check if there are entries from years before the current year
+      const currentYear = startDate.split("-")[0]
+      hasBefore = entries.some((e) => e.date.split("-")[0] < currentYear)
     } else {
       hasBefore = entries.some((e) => e.date < startDate)
     }
@@ -656,7 +759,7 @@ export default function TrendsScreen({ isDevView }: { isDevView?: boolean }) {
 
   const renderSimpleChart = () => {
     const chartPadding = 6 // Padding to prevent point cutoff
-    const chartHeight = 400
+    const chartHeight = 320
     const cellSize = 32
     const cellGap = 8
     const maxBarHeight = chartHeight - chartPadding * 2
@@ -684,6 +787,7 @@ export default function TrendsScreen({ isDevView }: { isDevView?: boolean }) {
     ]
 
     const dayLabels = ["S", "M", "T", "W", "T", "F", "S"]
+    const dayNamesShort = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
 
     let xLabels: string[] = []
     if (timeRange === "week") {
@@ -692,7 +796,7 @@ export default function TrendsScreen({ isDevView }: { isDevView?: boolean }) {
         // Parse date parts directly to avoid timezone issues
         const [year, month, day] = d.date.split("-").map(Number)
         const date = new Date(year, month - 1, day)
-        return dayLabels[date.getDay()]
+        return dayNamesShort[date.getDay()]
       })
     } else if (timeRange === "month") {
       // Generate labels for each data point, showing day number at intervals
@@ -711,6 +815,63 @@ export default function TrendsScreen({ isDevView }: { isDevView?: boolean }) {
 
     return (
       <ThemedView style={styles.chartContainer}>
+        {/* Navigation Controls - positioned at bottom of chart */}
+        <View
+          style={{
+            position: "absolute",
+            bottom: 0,
+            left: 0,
+            right: 0,
+            flexDirection: "row",
+            alignItems: "center",
+            justifyContent: "center",
+            paddingVertical: 4,
+            marginTop: 4,
+            paddingHorizontal: 16,
+            backgroundColor:
+              backgroundColor === "#151718"
+                ? "rgba(29, 29, 29, 0.95)"
+                : "rgba(249, 249, 249, 0.95)",
+            zIndex: 25,
+            borderRadius: "25%",
+          }}
+          pointerEvents="box-none"
+        >
+          <TouchableOpacity
+            onPress={() => setChartOffset(chartOffset - 1)}
+            disabled={!hasEntriesBefore}
+            style={{
+              padding: 8,
+              marginRight: 12,
+              opacity: hasEntriesBefore ? 1 : 0.2,
+            }}
+          >
+            <Ionicons name="chevron-back" size={24} color={textColor} />
+          </TouchableOpacity>
+          <ThemedText
+            style={{
+              fontSize: 12,
+              opacity: 0.7,
+              textAlign: "center",
+              flex: 1,
+              fontWeight: "500",
+            }}
+            numberOfLines={1}
+          >
+            {dateRangeText}
+          </ThemedText>
+          <TouchableOpacity
+            onPress={() => setChartOffset(chartOffset + 1)}
+            disabled={!hasEntriesAfter}
+            style={{
+              padding: 8,
+              marginLeft: 12,
+              opacity: hasEntriesAfter ? 1 : 0.2,
+            }}
+          >
+            <Ionicons name="chevron-forward" size={24} color={textColor} />
+          </TouchableOpacity>
+        </View>
         <View style={{ height: chartHeight, width: "100%" }}>
           {/* Layout: fixed left emoji column + right area that scrolls horizontally. */}
           <View style={{ flexDirection: "row" }}>
@@ -723,7 +884,7 @@ export default function TrendsScreen({ isDevView }: { isDevView?: boolean }) {
               scrollEventThrottle={16}
               showsVerticalScrollIndicator={false}
               nestedScrollEnabled={true}
-              contentContainerStyle={{ paddingTop: 8, paddingBottom: 40 }}
+              contentContainerStyle={{ paddingTop: 8, paddingBottom: 80 }}
               style={{ width: cellSize + cellGap }}
             >
               {MOOD_OPTIONS.map((moodRow) => (
@@ -754,7 +915,10 @@ export default function TrendsScreen({ isDevView }: { isDevView?: boolean }) {
               }}
               showsHorizontalScrollIndicator={false}
               contentContainerStyle={{ paddingRight: 16 }}
-              onScrollBeginDrag={() => setSelectedBarIndex(null)}
+              onScrollBeginDrag={() => {
+                setSelectedBarIndex(null)
+                setSelectedMoodType(null)
+              }}
               onScroll={(e: any) => {
                 const x = e.nativeEvent.contentOffset.x
                 labelScrollRef.current?.scrollTo({ x, animated: false })
@@ -787,11 +951,29 @@ export default function TrendsScreen({ isDevView }: { isDevView?: boolean }) {
                       {chartData.map((point, colIndex) => {
                         const entry = point.entry
                         const hasMood = entry
-                          ? getEntryMoods(entry).includes(moodRow.type)
+                          ? entry.moods.includes(moodRow.type)
                           : false
+                        const BoxComponent =
+                          timeRange === "year" ? TouchableOpacity : View
+                        const handleBoxPress = () => {
+                          // Toggle: if same box clicked, close popup
+                          if (
+                            selectedBarIndex === colIndex &&
+                            selectedMoodType === moodRow.type
+                          ) {
+                            setSelectedBarIndex(null)
+                            setSelectedMoodType(null)
+                          } else {
+                            setSelectedBarIndex(colIndex)
+                            setSelectedMoodType(moodRow.type)
+                          }
+                        }
                         return (
-                          <View
+                          <BoxComponent
                             key={`${moodRow.type}-${colIndex}`}
+                            onPress={
+                              timeRange === "year" ? handleBoxPress : undefined
+                            }
                             style={{
                               width: cellSize,
                               height: cellSize,
@@ -809,7 +991,7 @@ export default function TrendsScreen({ isDevView }: { isDevView?: boolean }) {
                 </ScrollView>
 
                 {/* X-axis labels aligned with grid columns — placed inside the horizontal ScrollView but outside the vertical ScrollView so they remain visible during vertical scroll. */}
-                <View style={{ height: 24, marginTop: 6 }} />
+                <View style={{ height: 48, marginTop: 6 }} />
               </View>
             </ScrollView>
             {/* Floating label row positioned above the left emoji column so numbers render on top. */}
@@ -822,7 +1004,7 @@ export default function TrendsScreen({ isDevView }: { isDevView?: boolean }) {
               contentContainerStyle={{ paddingRight: 16 }}
               style={{
                 position: "absolute",
-                bottom: 6,
+                bottom: 30,
                 left: cellSize + cellGap,
                 right: 16,
                 height: 24,
@@ -836,17 +1018,18 @@ export default function TrendsScreen({ isDevView }: { isDevView?: boolean }) {
                   key={`label-top-${idx}`}
                   style={{
                     width: cellSize,
-                    textAlign: timeRange === "year" ? "center" : "right",
-                    paddingRight: timeRange === "year" ? 8 : 16,
+                    textAlign: timeRange === "month" ? "right" : "center",
+                    paddingRight: timeRange === "month" ? 16 : 8,
                     marginRight: cellGap,
-                    fontSize: timeRange === "year" ? 10 : 12,
+                    fontSize: timeRange === "month" ? 12 : 10,
                   }}
                   numberOfLines={1}
                 >
-                  {timeRange === "year" ? String(label).slice(0, 3) : label}
+                  {timeRange === "month" ? label : String(label).slice(0, 3)}
                 </ThemedText>
               ))}
             </ScrollView>
+
             {/* Cover bottom-left so emojis don't sit in the corner */}
             <View
               style={{
@@ -854,8 +1037,11 @@ export default function TrendsScreen({ isDevView }: { isDevView?: boolean }) {
                 left: 0,
                 bottom: 0,
                 width: cellSize,
-                height: cellSize,
-                backgroundColor: "rgb(29, 29, 29)",
+                height: 54,
+                backgroundColor:
+                  backgroundColor === "#151718"
+                    ? "rgb(29, 29, 29)"
+                    : "rgb(249, 249, 249)",
                 zIndex: 15,
               }}
               pointerEvents="none"
@@ -863,10 +1049,10 @@ export default function TrendsScreen({ isDevView }: { isDevView?: boolean }) {
           </View>
         </View>
 
-        {/* Tooltip for selected bar - rendered outside ScrollView to appear on top */}
+        {/* Tooltip for selected box - rendered outside ScrollView to appear on top */}
         {timeRange === "year" &&
           selectedBarIndex !== null &&
-          chartData[selectedBarIndex]?.value !== null && (
+          selectedMoodType !== null && (
             <View
               style={[
                 styles.barTooltip,
@@ -877,11 +1063,7 @@ export default function TrendsScreen({ isDevView }: { isDevView?: boolean }) {
                     barWidth / 2 -
                     40,
                   top:
-                    chartPadding +
-                    maxBarHeight -
-                    ((chartData[selectedBarIndex].value! - 1) / 4) *
-                      maxBarHeight -
-                    50,
+                    chartPadding + maxBarHeight - (3.5 / 4) * maxBarHeight - 50,
                 },
               ]}
             >
@@ -892,63 +1074,36 @@ export default function TrendsScreen({ isDevView }: { isDevView?: boolean }) {
                 )
                 const moodCounts: Record<string, number> = {}
                 monthEntries.forEach((me) => {
-                  getEntryMoods(me).forEach((mt) => {
+                  me.moods.forEach((mt) => {
                     moodCounts[mt] = (moodCounts[mt] || 0) + 1
                   })
                 })
-                const counts = MOOD_OPTIONS.map((m) => ({
-                  type: m.type,
-                  image: m.image,
-                  label: m.label,
-                  count: moodCounts[m.type] || 0,
-                })).filter((c) => c.count > 0)
 
-                console.log(
-                  "bar-tooltip-render",
-                  monthKey,
-                  monthEntries.length,
-                  counts,
+                const selectedMood = MOOD_OPTIONS.find(
+                  (m) => m.type === selectedMoodType,
                 )
-
-                const [y, mo] = monthKey.split("-").map((s) => parseInt(s, 10))
-                const monthLabel = new Date(
-                  y,
-                  (mo || 1) - 1,
-                  1,
-                ).toLocaleDateString("en-US", {
-                  month: "short",
-                  year: "numeric",
-                })
+                const count = moodCounts[selectedMoodType] || 0
 
                 return (
-                  <>
-                    <ThemedText style={styles.barTooltipText}>
-                      {monthLabel}
-                    </ThemedText>
-                    {counts.length > 0 ? (
-                      counts.map((c) => (
-                        <View
-                          key={c.type}
-                          style={{
-                            flexDirection: "row",
-                            alignItems: "center",
-                            marginTop: 6,
-                          }}
-                        >
-                          <Image source={c.image} style={styles.tooltipImage} />
-                          <ThemedText
-                            style={[styles.barTooltipText, { marginLeft: 8 }]}
-                          >
-                            {c.count}
-                          </ThemedText>
-                        </View>
-                      ))
-                    ) : (
-                      <ThemedText style={styles.barTooltipText}>
-                        No entries this month
-                      </ThemedText>
+                  <View
+                    style={{
+                      flexDirection: "column",
+                      alignItems: "center",
+                      justifyContent: "center",
+                    }}
+                  >
+                    {selectedMood && (
+                      <Image
+                        source={selectedMood.image}
+                        style={styles.tooltipImage}
+                      />
                     )}
-                  </>
+                    <ThemedText
+                      style={[styles.barTooltipText, { marginLeft: 8 }]}
+                    >
+                      Found in {count} entr{count !== 1 ? "ies" : "y"}
+                    </ThemedText>
+                  </View>
                 )
               })()}
             </View>
@@ -1055,243 +1210,196 @@ export default function TrendsScreen({ isDevView }: { isDevView?: boolean }) {
     </Modal>
   )
 
+  useEffect(() => {
+    if (isPro && upgradeModalVisible) {
+      setUpgradeModalVisible(false)
+    }
+  }, [isPro, upgradeModalVisible])
+
   return (
     <View style={[styles.container, { backgroundColor }]}>
-      <ScrollView contentContainerStyle={styles.scrollContent}>
+      <ScrollView
+        ref={mainScrollRef}
+        contentContainerStyle={styles.scrollContent}
+        onScroll={(event) => {
+          currentMainScrollYRef.current = event.nativeEvent.contentOffset.y
+        }}
+        scrollEventThrottle={16}
+      >
         <ThemedView style={styles.header}>
           <ThemedText type="title">Mood Trends</ThemedText>
+          <ThemedText type="default" style={{ marginTop: 4 }}>
+            View your moods for this{" "}
+            {timeRange === "week"
+              ? "week"
+              : timeRange === "month"
+                ? "month"
+                : "year"}
+          </ThemedText>
         </ThemedView>
 
         {/* Time Range Buttons */}
-        <ThemedView style={styles.rangeButtonsContainer}>
-          {(["week", "month", "year"] as TimeRange[]).map((range) => {
-            const isDisabled = range === "year" && !isPro
-            return (
-              <TouchableOpacity
-                key={range}
-                style={[
-                  styles.rangeButton,
-                  timeRange === range && styles.rangeButtonActive,
-                  isDisabled && styles.rangeButtonDisabled,
-                ]}
-                onPress={() => {
-                  if (isDisabled) {
-                    setUpgradeModalVisible(true)
-                    return
-                  }
-                  setTimeRange(range)
-                  setSelectedBarIndex(null)
-                  setChartOffset(0)
-                }}
-              >
-                <ThemedText
-                  style={[
-                    styles.rangeButtonText,
-                    timeRange === range && styles.rangeButtonTextActive,
-                    isDisabled && styles.rangeButtonTextDisabled,
-                  ]}
-                >
-                  {rangeConfig[range].label}
-                  {isDisabled ? " 🔒" : ""}
-                </ThemedText>
-              </TouchableOpacity>
-            )
-          })}
-        </ThemedView>
-
-        {/* Chart */}
-        {renderSimpleChart()}
-
-        {/* Upgrade to Pro Button - only show if not pro */}
-        {!isPro && (
-          <TouchableOpacity
-            style={styles.upgradeButton}
-            onPress={() => setUpgradeModalVisible(true)}
-            activeOpacity={0.8}
-          >
-            <View style={styles.upgradeButtonTextContainer}>
-              <ThemedText style={styles.upgradeButtonTitle}>
-                Upgrade to Pro
-              </ThemedText>
-              <ThemedText style={styles.upgradeButtonSubtitle}>
-                Unlock Year view, Show all entries & more
-              </ThemedText>
-            </View>
-            <ThemedText style={styles.upgradeButtonArrow}>→</ThemedText>
-          </TouchableOpacity>
-        )}
-
-        {/* Pro Badge - show if pro */}
-        {isPro && (
-          <View style={styles.proBadge}>
-            <ThemedText style={styles.proBadgeEmoji}>⭐</ThemedText>
-            <ThemedText style={styles.proBadgeText}>
-              You are a Pro Member
-            </ThemedText>
-          </View>
-        )}
-
-        {/* Today's Mood Button */}
-        {isPro && todaysMoods.length > 0 ? (
-          <ThemedView style={styles.todayMoodMultiContainer}>
-            <View style={styles.todayMoodMultiHeader}>
-              <ThemedText style={styles.todayMoodMultiTitle}>
-                Today's Moods
-              </ThemedText>
-              <ThemedText style={styles.todayMoodMultiCount}>
-                {todaysMoods.length}{" "}
-                {todaysMoods.length === 1 ? "entry" : "entries"}
-              </ThemedText>
-            </View>
-            {todaysMoods.map((entry) => {
-              const moodsForEntry = getEntryMoods(entry)
-              const mood = getMoodOption(
-                moodsForEntry[0] ?? MOOD_OPTIONS[2].type,
-              )
-              const renderRightActions = () => (
+        <TutorialTarget
+          id="year-view"
+          onLayout={(event) => {
+            setYearViewSectionY(event.nativeEvent.layout.y)
+          }}
+        >
+          <ThemedView style={styles.rangeButtonsContainer}>
+            {(["week", "month", "year"] as TimeRange[]).map((range) => {
+              const isDisabled = range === "year" && !isPro
+              return (
                 <TouchableOpacity
-                  style={styles.deleteSwipeAction}
+                  key={range}
+                  style={[
+                    styles.rangeButton,
+                    timeRange === range && styles.rangeButtonActive,
+                  ]}
                   onPress={() => {
-                    Alert.alert(
-                      "Delete Mood",
-                      "Are you sure you want to delete this mood entry?",
-                      [
-                        { text: "Cancel", style: "cancel" },
-                        {
-                          text: "Delete",
-                          style: "destructive",
-                          onPress: () => deleteMood(entry.id),
-                        },
-                      ],
-                    )
+                    if (isDisabled) {
+                      setUpgradeModalVisible(true)
+                      return
+                    }
+                    setTimeRange(range)
+                    setSelectedBarIndex(null)
+                    setSelectedMoodType(null)
+                    setChartOffset(0)
                   }}
                 >
-                  <Ionicons name="trash-outline" size={24} color="white" />
+                  <ThemedText style={[styles.rangeButtonText]}>
+                    {rangeConfig[range].label}
+                  </ThemedText>
+                  {isDisabled ? (
+                    <Image
+                      source={require("@/assets/images/app_emoji/locked.png")}
+                      style={styles.lockedImage}
+                    />
+                  ) : null}
                 </TouchableOpacity>
               )
-              return (
-                <Swipeable
-                  key={entry.id}
-                  renderRightActions={renderRightActions}
-                  overshootRight={false}
-                >
+            })}
+          </ThemedView>
+        </TutorialTarget>
+
+        {/* Chart */}
+        <TutorialTarget
+          id="mood-chart"
+          onLayout={(event) => {
+            setChartSectionY(event.nativeEvent.layout.y)
+          }}
+        >
+          {renderSimpleChart()}
+        </TutorialTarget>
+
+        {/* Today's Mood Button */}
+        <TutorialTarget
+          id="multi-entries"
+          onLayout={(event) => {
+            setMultiEntriesSectionY(event.nativeEvent.layout.y)
+          }}
+        >
+          {isPro && (
+            <ThemedView style={styles.todayMoodMultiContainer}>
+              <View style={styles.todayMoodMultiHeader}>
+                <ThemedText style={styles.todayMoodMultiTitle}>
+                  Today&apos;s Moods
+                </ThemedText>
+                <ThemedText style={styles.todayMoodMultiCount}>
+                  {todaysMoods.length}{" "}
+                  {todaysMoods.length === 1 ? "entry" : "entries"}
+                </ThemedText>
+              </View>
+              {todaysMoods.map((entry) => {
+                const mood = getMoodOption(
+                  entry.moods[0] ?? MOOD_OPTIONS[2].type,
+                )
+                const renderRightActions = () => (
                   <TouchableOpacity
-                    activeOpacity={0.7}
-                    onPress={() => openEditMoodModal(entry)}
-                    style={[
-                      styles.todayMoodMultiEntry,
-                      { borderLeftColor: mood.color },
-                    ]}
+                    style={styles.deleteSwipeAction}
+                    onPress={() => {
+                      Alert.alert(
+                        "Delete Mood",
+                        "Are you sure you want to delete this mood entry?",
+                        [
+                          { text: "Cancel", style: "cancel" },
+                          {
+                            text: "Delete",
+                            style: "destructive",
+                            onPress: () => deleteMood(entry.id),
+                          },
+                        ],
+                      )
+                    }}
                   >
-                    {entry.moods
-                      ? entry.moods.map((mood: MoodType) => {
-                          const moodOption = getMoodOption(mood)
-                          return (
+                    <Ionicons name="trash-outline" size={24} color="white" />
+                  </TouchableOpacity>
+                )
+                return (
+                  <Swipeable
+                    key={entry.id}
+                    renderRightActions={renderRightActions}
+                    overshootRight={false}
+                  >
+                    <TouchableOpacity
+                      activeOpacity={0.7}
+                      onPress={() => openEditMoodModal(entry)}
+                      style={[
+                        styles.todayMoodMultiEntry,
+                        { borderLeftColor: mood.color },
+                      ]}
+                    >
+                      {entry.moods
+                        ? entry.moods.map((mood: MoodType) => {
+                            const moodOption = getMoodOption(mood)
+                            return (
+                              <Image
+                                key={moodOption.type}
+                                source={moodOption.image}
+                                style={styles.todayMoodMultiImage}
+                              />
+                            )
+                          })
+                        : entry.moods && (
                             <Image
-                              key={moodOption.type}
-                              source={moodOption.image}
+                              key={getMoodOption(entry.moods[0]).type}
+                              source={getMoodOption(entry.moods[0]).image}
                               style={styles.todayMoodMultiImage}
                             />
-                          )
-                        })
-                      : entry.mood && (
-                          <Image
-                            key={getMoodOption(entry.mood).type}
-                            source={getMoodOption(entry.mood).image}
-                            style={styles.todayMoodMultiImage}
-                          />
-                        )}
+                          )}
 
-                    <View style={styles.todayMoodMultiInfo}>
-                      {entry.note && (
-                        <ThemedText
-                          style={styles.todayMoodMultiNote}
-                          numberOfLines={1}
-                        >
-                          {entry.note}
-                        </ThemedText>
-                      )}
-                    </View>
-                    <ThemedText style={styles.todayMoodMultiTime}>
-                      {entry.time || ""}
-                    </ThemedText>
-                  </TouchableOpacity>
-                </Swipeable>
-              )
-            })}
-            <TouchableOpacity
-              style={styles.addAnotherMoodButton}
-              onPress={openMoodModal}
-              activeOpacity={0.7}
-            >
-              <ThemedText style={styles.addAnotherMoodText}>
-                + Log Another Mood
-              </ThemedText>
-            </TouchableOpacity>
-          </ThemedView>
-        ) : (
-          <TouchableOpacity
-            style={[
-              styles.todayMoodButton,
-              todaysMood &&
-                (() => {
-                  const m = getEntryMoods(todaysMood)[0] ?? MOOD_OPTIONS[2].type
-                  return {
-                    borderColor: getMoodOption(m).color,
-                    backgroundColor: getMoodOption(m).color + "15",
-                  }
-                })(),
-            ]}
-            onPress={openMoodModal}
-            activeOpacity={0.7}
-          >
-            {todaysMood ? (
-              <View style={styles.todayMoodContent}>
-                {(() => {
-                  const m = getEntryMoods(todaysMood)[0] ?? MOOD_OPTIONS[2].type
-                  return (
-                    <Image
-                      source={getMoodOption(m).image}
-                      style={styles.todayMoodEmojiImage}
-                    />
-                  )
-                })()}
-                <View style={styles.todayMoodTextContainer}>
-                  <ThemedText style={styles.todayMoodLabel}>
-                    Today's Mood
-                  </ThemedText>
-                  <ThemedText style={styles.todayMoodValue}>
-                    {(() =>
-                      getMoodOption(
-                        getEntryMoods(todaysMood)[0] ?? MOOD_OPTIONS[2].type,
-                      ).label)()}
-                  </ThemedText>
-                </View>
-                <ThemedText style={styles.todayMoodEdit}>Edit</ThemedText>
-              </View>
-            ) : (
-              <View style={styles.todayMoodContent}>
-                <ThemedText style={styles.todayMoodEmoji}>➕</ThemedText>
-                <View style={styles.todayMoodTextContainer}>
-                  <ThemedText style={styles.todayMoodLabel}>
-                    Log Today's Mood
-                  </ThemedText>
-                  <ThemedText style={styles.todayMoodSubtext}>
-                    Tap to record how you're feeling
-                  </ThemedText>
-                </View>
-              </View>
-            )}
-          </TouchableOpacity>
-        )}
+                      <View style={styles.todayMoodMultiInfo}>
+                        {entry.note && (
+                          <ThemedText
+                            style={styles.todayMoodMultiNote}
+                            numberOfLines={1}
+                          >
+                            {entry.note}
+                          </ThemedText>
+                        )}
+                      </View>
+                      <ThemedText style={styles.todayMoodMultiTime}>
+                        {entry.time || ""}
+                      </ThemedText>
+                    </TouchableOpacity>
+                  </Swipeable>
+                )
+              })}
+              <TouchableOpacity
+                style={styles.addAnotherMoodButton}
+                onPress={openMoodModal}
+                activeOpacity={0.7}
+              >
+                <ThemedText style={styles.addAnotherMoodText}>
+                  + Log Another Mood
+                </ThemedText>
+              </TouchableOpacity>
+            </ThemedView>
+          )}
+        </TutorialTarget>
 
         {/* Stats - Pro feature */}
         {isPro ? (
           <ThemedView style={styles.statsContainer}>
-            <ThemedText type="subtitle" style={styles.statsTitle}>
-              Advanced Statistics
-            </ThemedText>
-
             <View style={styles.statsGrid}>
               {/* Average Mood card removed per request; grid will show remaining 3 stats */}
 
@@ -1299,31 +1407,25 @@ export default function TrendsScreen({ isDevView }: { isDevView?: boolean }) {
                 {stats.mostCommon ? (
                   <Image
                     source={getMoodOption(stats.mostCommon as any).image}
-                    style={styles.statImage}
+                    style={{
+                      ...styles.statImage,
+                      marginBottom: 0,
+                      paddingTop: 4,
+                    }}
                   />
                 ) : (
                   <ThemedText style={styles.statEmoji}>—</ThemedText>
                 )}
-                <ThemedText style={styles.statLabel}>Most Common</ThemedText>
-              </ThemedView>
-
-              <ThemedView style={styles.statCard}>
-                <ThemedText style={styles.statEmoji}>📊</ThemedText>
-                <ThemedText style={styles.statLabel}>Entries</ThemedText>
-                <ThemedText style={styles.statValue}>
-                  {filteredEntries.length} /{" "}
-                  {timeRange === "month"
-                    ? new Date(
-                        new Date().getFullYear(),
-                        new Date().getMonth() + chartOffset + 1,
-                        0,
-                      ).getDate()
-                    : rangeConfig[timeRange].days}
+                <ThemedText style={styles.statLabel}>
+                  Most Common Mood
                 </ThemedText>
               </ThemedView>
 
               <ThemedView style={styles.statCard}>
-                <ThemedText style={styles.statEmoji}>🔥</ThemedText>
+                <Image
+                  source={require("@/assets/images/app_emoji/streak.png")}
+                  style={styles.analyticsCardEmoji}
+                />
                 <ThemedText style={styles.statLabel}>Current Streak</ThemedText>
                 <ThemedText style={styles.statValue}>
                   {stats.streak} {stats.streak === 1 ? "day" : "days"}
@@ -1332,122 +1434,178 @@ export default function TrendsScreen({ isDevView }: { isDevView?: boolean }) {
             </View>
 
             {/* Mood Distribution */}
-            {advancedStats.moodDistribution.length > 0 && (
-              <View style={styles.analyticsSection}>
-                <View style={styles.analyticsSectionTitleContainer}>
-                  <ThemedText style={styles.analyticsSectionTitle}>
-                    Mood Distribution
-                  </ThemedText>
+            {(fullMoodDistribution.length > 0 ||
+              currentStep?.id === "pro-step-distribution") && (
+              <TutorialTarget
+                id="mood-distribution"
+                onLayout={(event) => {
+                  setDistributionSectionY(event.nativeEvent.layout.y)
+                }}
+              >
+                <View style={styles.analyticsSection}>
+                  <View style={styles.analyticsSectionTitleContainer}>
+                    <ThemedText style={styles.analyticsSectionTitle}>
+                      Mood Distribution
+                    </ThemedText>
 
-                  {advancedStats.moodDistribution.length > 5 && (
-                    <TouchableOpacity
-                      onPress={() => router.push({ pathname: "/distribution" })}
-                    >
-                      <ThemedText style={styles.showAllText}>
-                        Show all
-                      </ThemedText>
-                    </TouchableOpacity>
+                    {fullMoodDistribution.length > 5 && (
+                      <TouchableOpacity
+                        onPress={() =>
+                          router.push({ pathname: "/distribution" })
+                        }
+                      >
+                        <ThemedText style={styles.showAllText}>
+                          Show all
+                        </ThemedText>
+                      </TouchableOpacity>
+                    )}
+                  </View>
+                  {fullMoodDistribution.length > 0 ? (
+                    fullMoodDistribution.slice(0, 5).map((item) => {
+                      const mood = getMoodOption(item.mood)
+                      return (
+                        <View key={item.mood} style={styles.distributionRow}>
+                          <Image
+                            source={mood.image}
+                            style={styles.distributionImage}
+                          />
+                          <View style={styles.distributionBarContainer}>
+                            <View
+                              style={[
+                                styles.distributionBar,
+                                {
+                                  width: `${item.percentage}%`,
+                                  backgroundColor: mood.color,
+                                },
+                              ]}
+                            />
+                          </View>
+                          <ThemedText style={styles.distributionPercent}>
+                            {Math.round(item.percentage)}%
+                          </ThemedText>
+                        </View>
+                      )
+                    })
+                  ) : (
+                    <ThemedText style={styles.emptySubtext}>
+                      Log more entries to populate your mood distribution.
+                    </ThemedText>
                   )}
                 </View>
-                {advancedStats.moodDistribution.slice(0, 5).map((item) => {
-                  const mood = getMoodOption(item.mood)
-                  return (
-                    <View key={item.mood} style={styles.distributionRow}>
-                      <Image
-                        source={mood.image}
-                        style={styles.distributionImage}
-                      />
-                      <View style={styles.distributionBarContainer}>
-                        <View
-                          style={[
-                            styles.distributionBar,
-                            {
-                              width: `${Math.max(item.percentage, 2)}%`,
-                              backgroundColor: mood.color,
-                            },
-                          ]}
-                        />
-                      </View>
-                      <ThemedText style={styles.distributionPercent}>
-                        {Math.round(item.percentage)}%
-                      </ThemedText>
-                    </View>
-                  )
-                })}
-              </View>
+              </TutorialTarget>
             )}
 
             {/* Additional Analytics */}
-            <View style={styles.analyticsSection}>
-              <ThemedText style={styles.analyticsSectionTitle}>
-                Deep Insights
-              </ThemedText>
-              <View style={styles.analyticsGrid}>
-                {advancedStats.bestDayOfWeek && (
-                  <ThemedView style={styles.analyticsCard}>
-                    <ThemedText style={styles.analyticsCardEmoji}>
-                      ☀️
-                    </ThemedText>
-                    <ThemedText style={styles.analyticsCardLabel}>
-                      Best Day
-                    </ThemedText>
-                    <ThemedText style={styles.analyticsCardValue}>
-                      {advancedStats.bestDayOfWeek}
-                    </ThemedText>
-                  </ThemedView>
-                )}
-                {advancedStats.worstDayOfWeek && (
-                  <ThemedView style={styles.analyticsCard}>
-                    <ThemedText style={styles.analyticsCardEmoji}>
-                      🌧️
-                    </ThemedText>
-                    <ThemedText style={styles.analyticsCardLabel}>
-                      Hardest Day
-                    </ThemedText>
-                    <ThemedText style={styles.analyticsCardValue}>
-                      {advancedStats.worstDayOfWeek}
-                    </ThemedText>
-                  </ThemedView>
-                )}
-                <ThemedView style={styles.analyticsCard}>
-                  <ThemedText style={styles.analyticsCardEmoji}>🏆</ThemedText>
-                  <ThemedText style={styles.analyticsCardLabel}>
-                    Best Streak
-                  </ThemedText>
-                  <ThemedText style={styles.analyticsCardValue}>
-                    {advancedStats.longestStreak}{" "}
-                    {advancedStats.longestStreak === 1 ? "day" : "days"}
-                  </ThemedText>
-                </ThemedView>
-                <ThemedView style={styles.analyticsCard}>
-                  <ThemedText style={styles.analyticsCardEmoji}>📈</ThemedText>
-                  <ThemedText style={styles.analyticsCardLabel}>
-                    Total Entries
-                  </ThemedText>
-                  <ThemedText style={styles.analyticsCardValue}>
-                    {advancedStats.totalEntries}
-                  </ThemedText>
-                </ThemedView>
-              </View>
-            </View>
-
-            {/* AI Mood Insights */}
-            {insights.length > 0 && (
+            <TutorialTarget
+              id="advanced-analytics"
+              onLayout={(event) => {
+                setAdvancedAnalyticsSectionY(event.nativeEvent.layout.y)
+              }}
+            >
               <View style={styles.analyticsSection}>
-                <ThemedText style={styles.analyticsSectionTitle}>
-                  ✨ Mood Insights
+                <ThemedText
+                  style={{ ...styles.analyticsSectionTitle, marginBottom: 8 }}
+                >
+                  Deep Insights
                 </ThemedText>
-                {insights.map((insight, index) => (
-                  <View key={index} style={styles.insightCard}>
-                    <ThemedText style={styles.insightEmoji}>
-                      {insight.emoji}
+                <View style={styles.analyticsGrid}>
+                  {advancedStats.bestDayOfWeek && (
+                    <ThemedView style={styles.analyticsCard}>
+                      <Image
+                        source={require("@/assets/images/app_emoji/best.png")}
+                        style={styles.analyticsCardEmoji}
+                      />
+                      <ThemedText style={styles.analyticsCardLabel}>
+                        Best Day
+                      </ThemedText>
+                      <ThemedText style={styles.analyticsCardValue}>
+                        {advancedStats.bestDayOfWeek}
+                      </ThemedText>
+                    </ThemedView>
+                  )}
+                  {advancedStats.worstDayOfWeek && (
+                    <ThemedView style={styles.analyticsCard}>
+                      <Image
+                        source={require("@/assets/images/app_emoji/stressed.png")}
+                        style={styles.analyticsCardEmoji}
+                      />
+                      <ThemedText style={styles.analyticsCardLabel}>
+                        Hardest Day
+                      </ThemedText>
+                      <ThemedText style={styles.analyticsCardValue}>
+                        {advancedStats.worstDayOfWeek}
+                      </ThemedText>
+                    </ThemedView>
+                  )}
+                  <ThemedView style={styles.analyticsCard}>
+                    <Image
+                      source={require("@/assets/images/app_emoji/streak.png")}
+                      style={styles.analyticsCardEmoji}
+                    />
+                    <ThemedText style={styles.analyticsCardLabel}>
+                      Best Streak
                     </ThemedText>
-                    <ThemedText style={styles.insightText}>
-                      {insight.text}
+                    <ThemedText style={styles.analyticsCardValue}>
+                      {advancedStats.longestStreak}{" "}
+                      {advancedStats.longestStreak === 1 ? "day" : "days"}
                     </ThemedText>
-                  </View>
-                ))}
+                  </ThemedView>
+                  <ThemedView style={styles.analyticsCard}>
+                    <Image
+                      source={require("@/assets/images/app_emoji/numbers.png")}
+                      style={styles.analyticsCardEmoji}
+                    />
+                    <ThemedText style={styles.analyticsCardLabel}>
+                      Total Entries
+                    </ThemedText>
+                    <ThemedText style={styles.analyticsCardValue}>
+                      {advancedStats.totalEntries}
+                    </ThemedText>
+                  </ThemedView>
+                </View>
               </View>
+            </TutorialTarget>
+
+            {/* Mood Insights */}
+            {(insights.length > 0 ||
+              currentStep?.id === "pro-step-mood-insights") && (
+              <TutorialTarget
+                id="mood-insights"
+                onLayout={(event) => {
+                  setMoodInsightsSectionY(event.nativeEvent.layout.y)
+                }}
+              >
+                <View style={styles.analyticsSection}>
+                  <ThemedText
+                    style={{ ...styles.analyticsSectionTitle, marginBottom: 8 }}
+                  >
+                    Mood Insights
+                  </ThemedText>
+                  {insights.length > 0 ? (
+                    insights.map((insight, index) => (
+                      <View key={index} style={styles.insightCard}>
+                        {typeof insight.emoji === "string" ? (
+                          <ThemedText style={styles.insightEmoji}>
+                            {insight.emoji}
+                          </ThemedText>
+                        ) : (
+                          <Image
+                            source={insight.emoji}
+                            style={styles.insightEmojiImage}
+                          />
+                        )}
+                        <ThemedText style={styles.insightText}>
+                          {insight.text}
+                        </ThemedText>
+                      </View>
+                    ))
+                  ) : (
+                    <ThemedText style={styles.emptySubtext}>
+                      Keep logging moods to unlock personalized insights.
+                    </ThemedText>
+                  )}
+                </View>
+              </TutorialTarget>
             )}
           </ThemedView>
         ) : (
@@ -1455,7 +1613,10 @@ export default function TrendsScreen({ isDevView }: { isDevView?: boolean }) {
             style={styles.statsUpgradeContainer}
             onPress={() => setUpgradeModalVisible(true)}
           >
-            <ThemedText style={styles.statsUpgradeEmoji}>🔒</ThemedText>
+            <Image
+              source={require("@/assets/images/app_emoji/locked.png")}
+              style={styles.statsUpgradeEmoji}
+            />
             <View style={styles.statsUpgradeContent}>
               <ThemedText style={styles.statsUpgradeTitle}>
                 Advanced Statistics
@@ -1493,65 +1654,6 @@ export default function TrendsScreen({ isDevView }: { isDevView?: boolean }) {
               )
               .slice(0, 3)
               .map((entry) => {
-                const cardContent = (
-                  <View>
-                    <View
-                      style={{
-                        flexDirection: "row",
-                        alignItems: "center",
-                        width: "100%",
-                      }}
-                    >
-                      {entry.moods && entry.moods.length > 1 ? (
-                        <ScrollView
-                          horizontal
-                          showsHorizontalScrollIndicator={false}
-                          nestedScrollEnabled={true}
-                          directionalLockEnabled={true}
-                          style={styles.moodScrollView}
-                        >
-                          <View style={styles.moodScrollContent}>
-                            {entry.moods.map((mood: MoodType) => {
-                              const moodOption = getMoodOption(mood)
-                              return (
-                                <Image
-                                  key={moodOption.type}
-                                  source={moodOption.image}
-                                  style={styles.entryImage}
-                                />
-                              )
-                            })}
-                          </View>
-                        </ScrollView>
-                      ) : (
-                        entry.mood ||
-                        (entry.moods && entry.moods.length == 1 && (
-                          <Image
-                            key={
-                              getMoodOption(entry.mood || entry.moods![0]).type
-                            }
-                            source={
-                              getMoodOption(entry.mood || entry.moods![0]).image
-                            }
-                            style={styles.entryImage}
-                          />
-                        ))
-                      )}
-                      <ThemedText style={styles.entryDate}>
-                        {new Date(entry.date).toLocaleDateString("en-US", {
-                          weekday: "short",
-                          month: "short",
-                          day: "numeric",
-                        })}
-                      </ThemedText>
-                    </View>
-                    {entry.note && (
-                      <ThemedText style={styles.entryNote} numberOfLines={2}>
-                        {entry.note}
-                      </ThemedText>
-                    )}
-                  </View>
-                )
                 const renderDeleteAction = () => (
                   <TouchableOpacity
                     style={styles.deleteSwipeAction}
@@ -1583,15 +1685,11 @@ export default function TrendsScreen({ isDevView }: { isDevView?: boolean }) {
                       activeOpacity={0.7}
                       onPress={() => openEditMoodModal(entry)}
                     >
-                      <ThemedView style={styles.entryCard}>
-                        {cardContent}
-                      </ThemedView>
+                      <EntryCard entry={entry} />
                     </TouchableOpacity>
                   </Swipeable>
                 ) : (
-                  <ThemedView key={entry.id} style={styles.entryCard}>
-                    {cardContent}
-                  </ThemedView>
+                  <EntryCard key={entry.id} entry={entry} />
                 )
               })}
           </ThemedView>
@@ -1606,6 +1704,33 @@ export default function TrendsScreen({ isDevView }: { isDevView?: boolean }) {
               Start tracking your mood to see trends!
             </ThemedText>
           </ThemedView>
+        )}
+
+        {/* Upgrade to Pro Button - only show if not pro */}
+        {!isPro ? (
+          <TutorialTarget id="pro-section">
+            <TouchableOpacity
+              style={styles.upgradeButton}
+              onPress={() => setUpgradeModalVisible(true)}
+              activeOpacity={0.8}
+            >
+              <View style={styles.upgradeButtonTextContainer}>
+                <ThemedText style={styles.upgradeButtonTitle}>
+                  Upgrade to Pro
+                </ThemedText>
+                <ThemedText style={styles.upgradeButtonSubtitle}>
+                  Unlock Year view, Mood Distribution & more
+                </ThemedText>
+              </View>
+              <ThemedText style={styles.upgradeButtonArrow}>→</ThemedText>
+            </TouchableOpacity>
+          </TutorialTarget>
+        ) : (
+          <View style={styles.proBadge}>
+            <ThemedText style={styles.proBadgeText}>
+              You are a Pro Member
+            </ThemedText>
+          </View>
         )}
       </ScrollView>
 
@@ -1674,31 +1799,68 @@ export default function TrendsScreen({ isDevView }: { isDevView?: boolean }) {
 
             <TouchableOpacity
               style={styles.subscribeButton}
-              onPress={() => {
-                // In a real app, this would trigger the in-app purchase flow
-                setUpgradeModalVisible(false)
-                Alert.alert(
-                  "Coming Soon",
-                  "In-app purchases will be available in a future update!",
-                )
+              onPress={async () => {
+                try {
+                  await buyPro()
+                } catch {
+                  Alert.alert(
+                    "Purchase Failed",
+                    "We couldn't complete your purchase. Please try again.",
+                  )
+                }
               }}
               activeOpacity={0.8}
+              disabled={purchaseLoading || isPro}
             >
-              <ThemedText style={styles.subscribeButtonText}>
-                Upgrade Now
-              </ThemedText>
+              {purchaseLoading ? (
+                <ActivityIndicator color="white" />
+              ) : (
+                <ThemedText style={styles.subscribeButtonText}>
+                  {isPro ? "You're Pro" : "Upgrade Now"}
+                </ThemedText>
+              )}
             </TouchableOpacity>
 
             <TouchableOpacity
               style={styles.restoreButton}
-              onPress={() => {
-                Alert.alert("Restore", "Checking for previous purchases...")
+              onPress={async () => {
+                try {
+                  await restorePurchases()
+                  Alert.alert(
+                    "Restore Complete",
+                    "Finished checking previous purchases.",
+                  )
+                } catch {
+                  Alert.alert(
+                    "Restore Failed",
+                    "Unable to restore purchases right now. Please try again.",
+                  )
+                }
               }}
+              disabled={purchaseLoading}
             >
               <ThemedText style={styles.restoreButtonText}>
-                Restore Purchase
+                {purchaseLoading ? "Restoring..." : "Restore Purchase"}
               </ThemedText>
             </TouchableOpacity>
+
+            {purchaseError ? (
+              <ThemedText style={styles.purchaseErrorText}>
+                {purchaseError}
+              </ThemedText>
+            ) : null}
+
+            {__DEV__ && (
+              <TouchableOpacity
+                style={styles.mockModeButton}
+                onPress={toggleMockIapMode}
+                disabled={purchaseLoading}
+              >
+                <ThemedText style={styles.mockModeButtonText}>
+                  Mock IAP Mode: {mockIapEnabled ? "ON" : "OFF"}
+                </ThemedText>
+              </TouchableOpacity>
+            )}
           </ThemedView>
         </View>
       </Modal>
@@ -1831,13 +1993,25 @@ export default function TrendsScreen({ isDevView }: { isDevView?: boolean }) {
       )}
 
       {/* Dev-only Add Entry Button */}
-      {__DEV__ && isDevView && (
-        <TouchableOpacity
-          style={styles.devButton}
-          onPress={() => setDevModalVisible(true)}
-        >
-          <ThemedText style={styles.devButtonText}>+ Add Test Entry</ThemedText>
-        </TouchableOpacity>
+      {__DEV__ && (
+        <>
+          <TouchableOpacity
+            style={styles.devButton}
+            onPress={() => setDevModalVisible(true)}
+          >
+            <ThemedText style={styles.devButtonText}>
+              + Add Test Entry
+            </ThemedText>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.devButton, { bottom: 80 }]}
+            onPress={() => void togglePro()}
+          >
+            <ThemedText style={styles.devButtonText}>
+              Pro: {isPro ? "ON" : "OFF"}
+            </ThemedText>
+          </TouchableOpacity>
+        </>
       )}
     </View>
   )
@@ -1851,6 +2025,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
+    marginBottom: 8,
   },
   scrollContent: {
     padding: 20,
@@ -1870,6 +2045,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 24,
     borderRadius: 20,
     backgroundColor: "rgba(150, 150, 150, 0.1)",
+    display: "flex",
+    flexDirection: "row",
   },
   rangeButtonActive: {
     backgroundColor: "#4CAF50",
@@ -1879,6 +2056,11 @@ const styles = StyleSheet.create({
   },
   rangeButtonTextActive: {
     color: "white",
+  },
+  lockedImage: {
+    width: 24,
+    height: 24,
+    marginLeft: 4,
   },
   rangeButtonDisabled: {
     opacity: 0.5,
@@ -2235,14 +2417,12 @@ const styles = StyleSheet.create({
   },
   statEmoji: {
     fontSize: 32,
-    marginBottom: 8,
     lineHeight: 42,
     textAlign: "center",
   },
   statLabel: {
     fontSize: 12,
     opacity: 0.7,
-    marginBottom: 4,
   },
   statValue: {
     fontSize: 16,
@@ -2259,8 +2439,10 @@ const styles = StyleSheet.create({
     marginBottom: 24,
   },
   statsUpgradeEmoji: {
-    fontSize: 24,
+    width: 24,
+    height: 24,
     marginRight: 12,
+    paddingTop: 4,
   },
   statsUpgradeContent: {
     flex: 1,
@@ -2299,7 +2481,6 @@ const styles = StyleSheet.create({
   analyticsSectionTitle: {
     fontSize: 15,
     fontWeight: "700",
-    marginBottom: 12,
   },
   distributionRow: {
     flexDirection: "row",
@@ -2361,8 +2542,8 @@ const styles = StyleSheet.create({
     gap: 0,
   },
   tooltipImage: {
-    width: 18,
-    height: 18,
+    width: 32,
+    height: 32,
     resizeMode: "contain",
   },
   distributionLabel: {
@@ -2403,8 +2584,8 @@ const styles = StyleSheet.create({
     overflow: "visible",
   },
   analyticsCardEmoji: {
-    fontSize: 22,
-    lineHeight: 30,
+    width: 30,
+    height: 30,
     marginBottom: 4,
   },
   analyticsCardLabel: {
@@ -2418,7 +2599,7 @@ const styles = StyleSheet.create({
   },
   insightCard: {
     flexDirection: "row",
-    alignItems: "flex-start",
+    alignItems: "center",
     padding: 12,
     borderRadius: 12,
     backgroundColor: "rgba(139, 92, 246, 0.08)",
@@ -2428,6 +2609,11 @@ const styles = StyleSheet.create({
     fontSize: 20,
     marginRight: 10,
     lineHeight: 28,
+  },
+  insightEmojiImage: {
+    width: 24,
+    height: 24,
+    marginRight: 10,
   },
   insightText: {
     flex: 1,
@@ -2543,9 +2729,9 @@ const styles = StyleSheet.create({
     marginBottom: 24,
     padding: 16,
     borderRadius: 16,
-    backgroundColor: "#8B5CF6",
+    backgroundColor: "#0e5168",
     borderWidth: 2,
-    borderColor: "#7C3AED",
+    borderColor: "#125c75",
   },
   upgradeButtonEmoji: {
     fontSize: 28,
@@ -2676,5 +2862,23 @@ const styles = StyleSheet.create({
   restoreButtonText: {
     fontSize: 14,
     opacity: 0.7,
+  },
+  purchaseErrorText: {
+    marginTop: 8,
+    textAlign: "center",
+    fontSize: 13,
+    color: "#FF6B6B",
+  },
+  mockModeButton: {
+    marginTop: 10,
+    alignItems: "center",
+    paddingVertical: 8,
+    backgroundColor: "orange",
+  },
+  mockModeButtonText: {
+    fontSize: 12,
+    opacity: 0.8,
+    color: "#687076",
+    fontWeight: "600",
   },
 })
